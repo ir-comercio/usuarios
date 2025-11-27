@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciamento de Usuários</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Splash Screen -->
+    <div class="splash-screen" id="splashScreen">
+        <h1 class="splash-title">Gerenciamento de Usuários</h1>
+    </div>
+
+    <!-- Conteúdo Principal -->
+    <div class="app-content">
+        <div class="container">
+            <div class="header">
+                <h1>👥 Gerenciamento de Usuários</h1>
+                <div id="connectionStatus" class="connection-status offline">
+                    <span class="status-dot"></span>
+                </div>
+            </div>
+
+            <div class="button-wrapper">
+                <button onclick="toggleForm()" class="register">➕ Novo Usuário</button>
+            </div>
+
+            <!-- Dashboard -->
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total de Usuários</div>
+                    <div class="stat-value" id="statTotal">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Usuários Ativos</div>
+                    <div class="stat-value stat-success" id="statAtivos">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Usuários Inativos</div>
+                    <div class="stat-value stat-danger" id="statInativos">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Administradores</div>
+                    <div class="stat-value stat-warning" id="statAdmins">0</div>
+                </div>
+            </div>
+
+            <!-- FILTROS -->
+            <div class="card">
+                <h2>Filtros</h2>
+                <div class="filter-section">
+                    <div class="form-group">
+                        <label for="search">Pesquisar</label>
+                        <input type="text" id="search" placeholder="Nome, username..." oninput="filterUsers()">
+                    </div>
+                    <div class="form-group">
+                        <label for="filterStatus">Status</label>
+                        <select id="filterStatus" onchange="filterUsers()">
+                            <option value="">Todos</option>
+                            <option value="true">Ativos</option>
+                            <option value="false">Inativos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filterAdmin">Tipo</label>
+                        <select id="filterAdmin" onchange="filterUsers()">
+                            <option value="">Todos</option>
+                            <option value="true">Administradores</option>
+                            <option value="false">Usuários</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Abas -->
+            <div class="card">
+                <div class="tabs">
+                    <button class="tab-button active" onclick="switchTab('usuarios')">👥 Usuários</button>
+                    <button class="tab-button" onclick="switchTab('tentativas')">🔐 Tentativas de Login</button>
+                    <button class="tab-button" onclick="switchTab('dispositivos')">📱 Dispositivos</button>
+                </div>
+
+                <!-- Aba: Usuários -->
+                <div id="tabUsuarios" class="tab-content active">
+                    <h2>Lista de Usuários</h2>
+                    <div id="usersContainer"></div>
+                </div>
+
+                <!-- Aba: Tentativas de Login -->
+                <div id="tabTentativas" class="tab-content">
+                    <h2>Tentativas de Login (Últimas 100)</h2>
+                    <div id="attemptsContainer"></div>
+                </div>
+
+                <!-- Aba: Dispositivos Autorizados -->
+                <div id="tabDispositivos" class="tab-content">
+                    <h2>Dispositivos Autorizados</h2>
+                    <div id="devicesContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: FORMULÁRIO DE USUÁRIO -->
+    <div id="modalForm" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeForm()">&times;</span>
+            <h2 id="formTitle">Novo Usuário</h2>
+            <form id="userForm" onsubmit="handleSubmit(event)">
+                <div class="form-group">
+                    <label for="name">Nome Completo *</label>
+                    <input type="text" id="name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="username">Nome de Usuário *</label>
+                    <input type="text" id="username" required pattern="[a-z0-9_]+" title="Apenas letras minúsculas, números e underscore">
+                    <small>Apenas letras minúsculas, números e underscore (_)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Senha *</label>
+                    <input type="password" id="password" minlength="6">
+                    <small id="passwordHint">Mínimo 6 caracteres</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="is_admin">
+                        <span>Administrador</span>
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="is_active" checked>
+                        <span>Ativo</span>
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" onclick="closeForm()" class="btn-secondary">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: VISUALIZAR USUÁRIO -->
+    <div id="modalView" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeViewModal()">&times;</span>
+            <h2>Detalhes do Usuário</h2>
+            <div id="userDetails"></div>
+            <div class="form-actions">
+                <button onclick="closeViewModal()" class="btn-primary">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: TELA DE ACESSO NEGADO -->
+    <div id="modalAccessDenied" class="modal" style="display: none;">
+        <div class="modal-content access-denied">
+            <h2>🔒 Acesso Negado</h2>
+            <p>Você não tem permissão para acessar este sistema.</p>
+            <p>Entre em contato com o administrador.</p>
+            <button onclick="voltarParaPortal()" class="btn-primary">Voltar ao Portal</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
