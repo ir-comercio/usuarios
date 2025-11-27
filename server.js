@@ -32,19 +32,56 @@ const supabase = createClient(supabaseUrl, supabaseServiceRole, {
 });
 
 // ============================================
+// CONFIGURAÇÃO
+// ============================================
+
+const PORTAL_URL = process.env.PORTAL_URL || 'https://ir-comercio-portal-zcan.onrender.com';
+
+// ============================================
 // MIDDLEWARES
 // ============================================
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Log de requisições
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
     next();
 });
+
+// Middleware de autenticação para rotas da API
+async function requireAuth(req, res, next) {
+    // Permitir acesso público a health check e arquivos estáticos
+    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/api') === false) {
+        return next();
+    }
+    
+    // Verificar se há sessionToken nos headers
+    const sessionToken = req.headers['x-session-token'] || req.query.sessionToken;
+    
+    if (!sessionToken) {
+        console.log('❌ Acesso negado: sem sessionToken');
+        return res.status(401).json({
+            success: false,
+            error: 'Não autenticado',
+            message: 'Token de sessão não fornecido'
+        });
+    }
+    
+    // Validar token com o portal (opcional - implementar se necessário)
+    // Por enquanto, apenas verificar se o token existe
+    console.log('✅ Token de sessão presente:', sessionToken.substring(0, 10) + '...');
+    
+    next();
+}
+
+// Aplicar middleware nas rotas da API
+app.use('/api', requireAuth);
+
+// Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
 // FUNÇÕES AUXILIARES
