@@ -30,7 +30,7 @@
             <div class="dashboard-grid">
                 <div class="stat-card">
                     <div class="stat-label">Total</div>
-                    <div class="stat-value" id="statTotal">0</div>
+                    <div class="stat-value stat-primary" id="statTotal">0</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Ativos</div>
@@ -46,23 +46,11 @@
                 </div>
             </div>
 
-            <!-- FILTROS -->
+            <!-- FILTRO DE PESQUISA -->
             <div class="card">
-                <h3>Filtros</h3>
-                <div class="filters">
-                    <input type="text" id="searchInput" placeholder="Pesquisar por nome ou usuário..." oninput="filterUsers()">
-                    
-                    <select id="filterStatus" onchange="filterUsers()">
-                        <option value="all">Todos os Status</option>
-                        <option value="active">Ativos</option>
-                        <option value="inactive">Inativos</option>
-                    </select>
-
-                    <select id="filterAdmin" onchange="filterUsers()">
-                        <option value="all">Todos os Tipos</option>
-                        <option value="admin">Administradores</option>
-                        <option value="user">Usuários</option>
-                    </select>
+                <div style="margin-bottom: 0;">
+                    <label for="search" style="display: block; margin-bottom: 8px; font-weight: 500;">Pesquisar:</label>
+                    <input type="text" id="search" placeholder="Pesquisar por nome ou usuário..." oninput="filterUsers()" style="width: 100%;">
                 </div>
             </div>
 
@@ -128,6 +116,16 @@
             <div class="button-group">
                 <button onclick="closeViewModal()">Fechar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ACESSO NEGADO -->
+    <div id="modalAccessDenied" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>🔒 Acesso Negado</h2>
+            <p>Você não tem permissão para acessar este sistema.</p>
+            <p>Entre em contato com o administrador.</p>
+            <button onclick="voltarParaPortal()">Voltar ao Portal</button>
         </div>
     </div>
 
