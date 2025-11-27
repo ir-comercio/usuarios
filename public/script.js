@@ -6,22 +6,20 @@ const PORTAL_URL = 'https://ir-comercio-portal-zcan.onrender.com';
 const API_URL = '/api';
 
 let users = [];
-let loginAttempts = [];
-let authorizedDevices = [];
 let isOnline = false;
 let editingUserId = null;
 let sessionToken = null;
 
 // ============================================
-// INICIALIZAÇÃO E AUTENTICAÇÃO
+// INICIALIZAÇÃO
 // ============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Sistema de Gerenciamento de Usuários iniciado');
     
-    // Verificar autenticação ANTES de tudo
+    // Verificar autenticação
     if (!verificarAutenticacao()) {
-        return; // Para a execução se não autenticado
+        return;
     }
     
     // Mostrar splash screen por 2 segundos
@@ -40,48 +38,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ============================================
-// AUTENTICAÇÃO VIA PORTAL
+// AUTENTICAÇÃO
 // ============================================
 
 function verificarAutenticacao() {
-    // Verificar se há token na URL
+    // Verificar token na URL
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('sessionToken');
 
     if (tokenFromUrl) {
-        // Salvar token no sessionStorage
         sessionToken = tokenFromUrl;
         sessionStorage.setItem('usuariosSession', tokenFromUrl);
-        
-        // Limpar URL (remover token)
         window.history.replaceState({}, document.title, window.location.pathname);
-        
         console.log('✅ Autenticado via URL');
         return true;
-    } else {
-        // Tentar recuperar token do sessionStorage
-        sessionToken = sessionStorage.getItem('usuariosSession');
-        
-        if (sessionToken) {
-            console.log('✅ Autenticado via sessionStorage');
-            return true;
-        }
     }
 
-    // Se não tem token, bloquear acesso
-    console.log('❌ Não autenticado - redirecionando');
+    // Verificar sessionStorage
+    sessionToken = sessionStorage.getItem('usuariosSession');
+    
+    if (sessionToken) {
+        console.log('✅ Autenticado via sessionStorage');
+        return true;
+    }
+
+    // Sem token = bloquear
+    console.log('❌ Não autenticado');
     mostrarTelaAcessoNegado();
     return false;
 }
 
 function mostrarTelaAcessoNegado() {
-    // Esconder splash screen
     document.getElementById('splashScreen').style.display = 'none';
-    
-    // Esconder conteúdo principal
     document.querySelector('.app-content').style.display = 'none';
-    
-    // Mostrar modal de acesso negado
     document.getElementById('modalAccessDenied').style.display = 'flex';
 }
 
@@ -95,59 +84,42 @@ function voltarParaPortal() {
 
 async function checkServerStatus() {
     try {
-        const response = await fetch(`${API_URL}/../health`);
-        const data = await response.json();
+        const response = await fetch(`${API_URL}/users`, {
+            headers: { 'x-session-token': sessionToken }
+        });
         
-        isOnline = data.status === 'healthy';
-        updateConnectionStatus(isOnline);
+        if (response.ok) {
+            isOnline = true;
+            document.getElementById('connectionStatus').className = 'connection-status online';
+        } else {
+            throw new Error('Servidor offline');
+        }
     } catch (error) {
-        console.error('Erro ao verificar status do servidor:', error);
         isOnline = false;
-        updateConnectionStatus(false);
-    }
-}
-
-function updateConnectionStatus(online) {
-    const statusElement = document.getElementById('connectionStatus');
-    if (online) {
-        statusElement.classList.remove('offline');
-        statusElement.classList.add('online');
-        statusElement.innerHTML = '<span class="status-dot"></span> Online';
-    } else {
-        statusElement.classList.remove('online');
-        statusElement.classList.add('offline');
-        statusElement.innerHTML = '<span class="status-dot"></span> Offline';
+        document.getElementById('connectionStatus').className = 'connection-status offline';
     }
 }
 
 // ============================================
-// CARREGAR DADOS
+// CARREGAMENTO DE DADOS
 // ============================================
 
 async function loadAllData() {
-    await Promise.all([
-        loadUsers(),
-        loadLoginAttempts(),
-        loadAuthorizedDevices(),
-        loadDashboard()
-    ]);
+    await loadUsers();
+    await loadDashboard();
 }
 
 async function loadUsers() {
     try {
         const response = await fetch(`${API_URL}/users`, {
-            headers: {
-                'x-session-token': sessionToken
-            }
+            headers: { 'x-session-token': sessionToken }
         });
         const data = await response.json();
         
         if (data.success) {
             users = data.data;
             renderUsers();
-            updateFilters();
         } else if (data.error === 'Não autenticado') {
-            console.error('❌ Sessão expirada');
             mostrarTelaAcessoNegado();
         }
     } catch (error) {
@@ -155,48 +127,10 @@ async function loadUsers() {
     }
 }
 
-async function loadLoginAttempts() {
-    try {
-        const response = await fetch(`${API_URL}/login-attempts?limit=100`, {
-            headers: {
-                'x-session-token': sessionToken
-            }
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            loginAttempts = data.data;
-            renderLoginAttempts();
-        }
-    } catch (error) {
-        console.error('Erro ao carregar tentativas de login:', error);
-    }
-}
-
-async function loadAuthorizedDevices() {
-    try {
-        const response = await fetch(`${API_URL}/authorized-devices`, {
-            headers: {
-                'x-session-token': sessionToken
-            }
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            authorizedDevices = data.data;
-            renderAuthorizedDevices();
-        }
-    } catch (error) {
-        console.error('Erro ao carregar dispositivos:', error);
-    }
-}
-
 async function loadDashboard() {
     try {
         const response = await fetch(`${API_URL}/dashboard`, {
-            headers: {
-                'x-session-token': sessionToken
-            }
+            headers: { 'x-session-token': sessionToken }
         });
         const data = await response.json();
         
@@ -208,28 +142,31 @@ async function loadDashboard() {
     }
 }
 
+function updateDashboard(stats) {
+    document.getElementById('statTotal').textContent = stats.total_users || 0;
+    document.getElementById('statAtivos').textContent = stats.active_users || 0;
+    document.getElementById('statInativos').textContent = stats.inactive_users || 0;
+    document.getElementById('statAdmins').textContent = stats.admin_users || 0;
+}
+
 // ============================================
-// RENDERIZAÇÃO
+// RENDERIZAÇÃO DE USUÁRIOS
 // ============================================
 
 function renderUsers() {
     const container = document.getElementById('usersContainer');
     
     if (users.length === 0) {
-        container.innerHTML = `
-            <div class="empty-message">
-                <p>Nenhum usuário cadastrado</p>
-            </div>
-        `;
+        container.innerHTML = '<div class="empty-message">Nenhum usuário cadastrado</div>';
         return;
     }
     
     const html = `
-        <table class="user-table">
+        <table class="users-table">
             <thead>
                 <tr>
                     <th>Nome</th>
-                    <th>Username</th>
+                    <th>Usuário</th>
                     <th>Status</th>
                     <th>Tipo</th>
                     <th>Criado em</th>
@@ -239,25 +176,17 @@ function renderUsers() {
             <tbody>
                 ${users.map(user => `
                     <tr>
-                        <td class="user-name">${escapeHtml(user.name)}</td>
-                        <td class="user-username">@${escapeHtml(user.username)}</td>
-                        <td>
-                            <span class="status-badge ${user.is_active ? 'active' : 'inactive'}">
-                                ${user.is_active ? 'Ativo' : 'Inativo'}
-                            </span>
-                        </td>
-                        <td>
-                            ${user.is_admin ? '<span class="status-badge admin">Admin</span>' : 'Usuário'}
-                        </td>
+                        <td>${escapeHtml(user.name)}</td>
+                        <td>${escapeHtml(user.username)}</td>
+                        <td><span class="badge ${user.is_active ? 'ativo' : 'inativo'}">${user.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                        <td><span class="badge ${user.is_admin ? 'admin' : ''}">${user.is_admin ? 'Admin' : 'Usuário'}</span></td>
                         <td>${formatDate(user.created_at)}</td>
                         <td>
                             <div class="user-actions">
-                                <button onclick="viewUser('${user.id}')" class="btn-action btn-view">Ver</button>
-                                <button onclick="editUser('${user.id}')" class="btn-action btn-edit">Editar</button>
-                                <button onclick="toggleUserStatus('${user.id}')" class="btn-action btn-toggle">
-                                    ${user.is_active ? 'Desativar' : 'Ativar'}
-                                </button>
-                                <button onclick="deleteUser('${user.id}', '${escapeHtml(user.name)}')" class="btn-action btn-delete">Excluir</button>
+                                <button class="btn-view" onclick="viewUser('${user.id}')">Ver</button>
+                                <button class="btn-edit" onclick="editUser('${user.id}')">Editar</button>
+                                <button class="btn-toggle" onclick="toggleUserStatus('${user.id}')">${user.is_active ? 'Desativar' : 'Ativar'}</button>
+                                <button class="btn-delete" onclick="deleteUser('${user.id}', '${escapeHtml(user.name)}')">Excluir</button>
                             </div>
                         </td>
                     </tr>
@@ -269,150 +198,44 @@ function renderUsers() {
     container.innerHTML = html;
 }
 
-function renderLoginAttempts() {
-    const container = document.getElementById('attemptsContainer');
-    
-    if (loginAttempts.length === 0) {
-        container.innerHTML = `
-            <div class="empty-message">
-                <p>Nenhuma tentativa de login registrada</p>
-            </div>
-        `;
-        return;
-    }
-    
-    const html = `
-        <table class="attempts-table">
-            <thead>
-                <tr>
-                    <th>Data/Hora</th>
-                    <th>Usuário</th>
-                    <th>IP</th>
-                    <th>Status</th>
-                    <th>Motivo</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${loginAttempts.map(attempt => `
-                    <tr>
-                        <td>${formatDateTime(attempt.timestamp)}</td>
-                        <td>@${escapeHtml(attempt.username)}</td>
-                        <td>${escapeHtml(attempt.ip_address)}</td>
-                        <td>
-                            <span class="status-badge ${attempt.success ? 'success' : 'failed'}">
-                                ${attempt.success ? 'Sucesso' : 'Falhou'}
-                            </span>
-                        </td>
-                        <td>${attempt.failure_reason ? escapeHtml(attempt.failure_reason) : '-'}</td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    `;
-    
-    container.innerHTML = html;
-}
-
-function renderAuthorizedDevices() {
-    const container = document.getElementById('devicesContainer');
-    
-    if (authorizedDevices.length === 0) {
-        container.innerHTML = `
-            <div class="empty-message">
-                <p>Nenhum dispositivo autorizado</p>
-            </div>
-        `;
-        return;
-    }
-    
-    const html = `
-        <table class="devices-table">
-            <thead>
-                <tr>
-                    <th>Data/Hora</th>
-                    <th>Usuário</th>
-                    <th>IP</th>
-                    <th>Dispositivo</th>
-                    <th>User Agent</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${authorizedDevices.map(device => `
-                    <tr>
-                        <td>${formatDateTime(device.timestamp)}</td>
-                        <td>@${escapeHtml(device.username)}</td>
-                        <td>${escapeHtml(device.ip_address)}</td>
-                        <td>${escapeHtml(device.device_name)}</td>
-                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            ${escapeHtml(device.user_agent)}
-                        </td>
-                        <td>
-                            <button onclick="removeDevice('${device.id}')" class="btn-action btn-delete">Remover</button>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    `;
-    
-    container.innerHTML = html;
-}
-
-function updateDashboard(stats) {
-    document.getElementById('statTotal').textContent = stats.total_users || 0;
-    document.getElementById('statAtivos').textContent = stats.active_users || 0;
-    document.getElementById('statInativos').textContent = stats.inactive_users || 0;
-    document.getElementById('statAdmins').textContent = stats.admin_users || 0;
-}
-
 // ============================================
 // FILTROS
 // ============================================
 
-function updateFilters() {
-    // Filtros já estão no HTML como estáticos
-}
-
 function filterUsers() {
-    const searchTerm = document.getElementById('search').value.toLowerCase();
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     const filterStatus = document.getElementById('filterStatus').value;
     const filterAdmin = document.getElementById('filterAdmin').value;
     
-    const filteredUsers = users.filter(user => {
-        const matchesSearch = 
-            user.name.toLowerCase().includes(searchTerm) ||
-            user.username.toLowerCase().includes(searchTerm);
+    const filtered = users.filter(user => {
+        const matchSearch = user.name.toLowerCase().includes(searchTerm) || 
+                          user.username.toLowerCase().includes(searchTerm);
         
-        const matchesStatus = 
-            filterStatus === '' || 
-            user.is_active.toString() === filterStatus;
+        const matchStatus = filterStatus === 'all' || 
+                          (filterStatus === 'active' && user.is_active) ||
+                          (filterStatus === 'inactive' && !user.is_active);
         
-        const matchesAdmin = 
-            filterAdmin === '' || 
-            user.is_admin.toString() === filterAdmin;
+        const matchAdmin = filterAdmin === 'all' ||
+                         (filterAdmin === 'admin' && user.is_admin) ||
+                         (filterAdmin === 'user' && !user.is_admin);
         
-        return matchesSearch && matchesStatus && matchesAdmin;
+        return matchSearch && matchStatus && matchAdmin;
     });
     
-    // Renderizar usuários filtrados
+    // Renderizar com usuários filtrados
     const container = document.getElementById('usersContainer');
     
-    if (filteredUsers.length === 0) {
-        container.innerHTML = `
-            <div class="empty-message">
-                <p>Nenhum usuário encontrado com os filtros selecionados</p>
-            </div>
-        `;
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-message">Nenhum usuário encontrado</div>';
         return;
     }
     
     const html = `
-        <table class="user-table">
+        <table class="users-table">
             <thead>
                 <tr>
                     <th>Nome</th>
-                    <th>Username</th>
+                    <th>Usuário</th>
                     <th>Status</th>
                     <th>Tipo</th>
                     <th>Criado em</th>
@@ -420,27 +243,19 @@ function filterUsers() {
                 </tr>
             </thead>
             <tbody>
-                ${filteredUsers.map(user => `
+                ${filtered.map(user => `
                     <tr>
-                        <td class="user-name">${escapeHtml(user.name)}</td>
-                        <td class="user-username">@${escapeHtml(user.username)}</td>
-                        <td>
-                            <span class="status-badge ${user.is_active ? 'active' : 'inactive'}">
-                                ${user.is_active ? 'Ativo' : 'Inativo'}
-                            </span>
-                        </td>
-                        <td>
-                            ${user.is_admin ? '<span class="status-badge admin">Admin</span>' : 'Usuário'}
-                        </td>
+                        <td>${escapeHtml(user.name)}</td>
+                        <td>${escapeHtml(user.username)}</td>
+                        <td><span class="badge ${user.is_active ? 'ativo' : 'inativo'}">${user.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                        <td><span class="badge ${user.is_admin ? 'admin' : ''}">${user.is_admin ? 'Admin' : 'Usuário'}</span></td>
                         <td>${formatDate(user.created_at)}</td>
                         <td>
                             <div class="user-actions">
-                                <button onclick="viewUser('${user.id}')" class="btn-action btn-view">Ver</button>
-                                <button onclick="editUser('${user.id}')" class="btn-action btn-edit">Editar</button>
-                                <button onclick="toggleUserStatus('${user.id}')" class="btn-action btn-toggle">
-                                    ${user.is_active ? 'Desativar' : 'Ativar'}
-                                </button>
-                                <button onclick="deleteUser('${user.id}', '${escapeHtml(user.name)}')" class="btn-action btn-delete">Excluir</button>
+                                <button class="btn-view" onclick="viewUser('${user.id}')">Ver</button>
+                                <button class="btn-edit" onclick="editUser('${user.id}')">Editar</button>
+                                <button class="btn-toggle" onclick="toggleUserStatus('${user.id}')">${user.is_active ? 'Desativar' : 'Ativar'}</button>
+                                <button class="btn-delete" onclick="deleteUser('${user.id}', '${escapeHtml(user.name)}')">Excluir</button>
                             </div>
                         </td>
                     </tr>
@@ -453,39 +268,11 @@ function filterUsers() {
 }
 
 // ============================================
-// ABAS
-// ============================================
-
-function switchTab(tabName) {
-    // Remover classe active de todas as abas
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    
-    // Ativar aba selecionada
-    event.target.classList.add('active');
-    
-    if (tabName === 'usuarios') {
-        document.getElementById('tabUsuarios').classList.add('active');
-    } else if (tabName === 'tentativas') {
-        document.getElementById('tabTentativas').classList.add('active');
-    } else if (tabName === 'dispositivos') {
-        document.getElementById('tabDispositivos').classList.add('active');
-    }
-}
-
-// ============================================
 // CRUD DE USUÁRIOS
 // ============================================
 
 function toggleForm() {
-    // Fechar outros modais primeiro
     closeViewModal();
-    
     editingUserId = null;
     document.getElementById('formTitle').textContent = 'Novo Usuário';
     document.getElementById('userForm').reset();
@@ -497,23 +284,6 @@ function toggleForm() {
 function closeForm() {
     document.getElementById('modalForm').style.display = 'none';
     editingUserId = null;
-}
-
-function editUser(id) {
-    const user = users.find(u => u.id === id);
-    if (!user) return;
-    
-    editingUserId = id;
-    document.getElementById('formTitle').textContent = 'Editar Usuário';
-    document.getElementById('name').value = user.name;
-    document.getElementById('username').value = user.username;
-    document.getElementById('password').value = '';
-    document.getElementById('password').required = false;
-    document.getElementById('passwordHint').textContent = 'Deixe em branco para manter a senha atual';
-    document.getElementById('is_admin').checked = user.is_admin;
-    document.getElementById('is_active').checked = user.is_active;
-    
-    document.getElementById('modalForm').style.display = 'flex';
 }
 
 async function handleSubmit(event) {
@@ -531,7 +301,6 @@ async function handleSubmit(event) {
         let response;
         
         if (editingUserId) {
-            // Atualizar usuário existente
             response = await fetch(`${API_URL}/users/${editingUserId}`, {
                 method: 'PUT',
                 headers: { 
@@ -541,7 +310,6 @@ async function handleSubmit(event) {
                 body: JSON.stringify(formData)
             });
         } else {
-            // Criar novo usuário
             response = await fetch(`${API_URL}/users`, {
                 method: 'POST',
                 headers: { 
@@ -567,6 +335,22 @@ async function handleSubmit(event) {
     }
 }
 
+function editUser(id) {
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    
+    editingUserId = id;
+    document.getElementById('formTitle').textContent = 'Editar Usuário';
+    document.getElementById('name').value = user.name;
+    document.getElementById('username').value = user.username;
+    document.getElementById('password').value = '';
+    document.getElementById('password').required = false;
+    document.getElementById('passwordHint').textContent = 'Deixe em branco para manter a senha atual';
+    document.getElementById('is_admin').checked = user.is_admin;
+    document.getElementById('is_active').checked = user.is_active;
+    document.getElementById('modalForm').style.display = 'flex';
+}
+
 async function deleteUser(id, name) {
     if (!confirm(`Tem certeza que deseja excluir o usuário "${name}"?\n\nEsta ação não pode ser desfeita.`)) {
         return;
@@ -575,9 +359,7 @@ async function deleteUser(id, name) {
     try {
         const response = await fetch(`${API_URL}/users/${id}`, {
             method: 'DELETE',
-            headers: {
-                'x-session-token': sessionToken
-            }
+            headers: { 'x-session-token': sessionToken }
         });
         
         const result = await response.json();
@@ -598,9 +380,7 @@ async function toggleUserStatus(id) {
     try {
         const response = await fetch(`${API_URL}/users/${id}/toggle-status`, {
             method: 'PATCH',
-            headers: {
-                'x-session-token': sessionToken
-            }
+            headers: { 'x-session-token': sessionToken }
         });
         
         const result = await response.json();
@@ -622,32 +402,30 @@ function viewUser(id) {
     if (!user) return;
     
     const html = `
-        <div class="user-detail-grid">
-            <div class="user-detail-item">
-                <strong>Nome Completo</strong>
-                <span>${escapeHtml(user.name)}</span>
+        <div class="user-details">
+            <div class="detail-item">
+                <label>Nome Completo</label>
+                <div class="value">${escapeHtml(user.name)}</div>
             </div>
-            <div class="user-detail-item">
-                <strong>Username</strong>
-                <span>@${escapeHtml(user.username)}</span>
+            <div class="detail-item">
+                <label>Nome de Usuário</label>
+                <div class="value">${escapeHtml(user.username)}</div>
             </div>
-            <div class="user-detail-item">
-                <strong>Status</strong>
-                <span class="status-badge ${user.is_active ? 'active' : 'inactive'}">
-                    ${user.is_active ? 'Ativo' : 'Inativo'}
-                </span>
+            <div class="detail-item">
+                <label>Status</label>
+                <div class="value"><span class="badge ${user.is_active ? 'ativo' : 'inativo'}">${user.is_active ? 'Ativo' : 'Inativo'}</span></div>
             </div>
-            <div class="user-detail-item">
-                <strong>Tipo</strong>
-                <span>${user.is_admin ? '<span class="status-badge admin">Administrador</span>' : 'Usuário'}</span>
+            <div class="detail-item">
+                <label>Tipo</label>
+                <div class="value"><span class="badge ${user.is_admin ? 'admin' : ''}">${user.is_admin ? 'Administrador' : 'Usuário'}</span></div>
             </div>
-            <div class="user-detail-item">
-                <strong>Criado em</strong>
-                <span>${formatDateTime(user.created_at)}</span>
+            <div class="detail-item">
+                <label>Criado em</label>
+                <div class="value">${formatDate(user.created_at)}</div>
             </div>
-            <div class="user-detail-item">
-                <strong>Atualizado em</strong>
-                <span>${formatDateTime(user.updated_at)}</span>
+            <div class="detail-item">
+                <label>Atualizado em</label>
+                <div class="value">${formatDate(user.updated_at)}</div>
             </div>
         </div>
     `;
@@ -661,49 +439,13 @@ function closeViewModal() {
 }
 
 // ============================================
-// DISPOSITIVOS
-// ============================================
-
-async function removeDevice(id) {
-    if (!confirm('Tem certeza que deseja remover este dispositivo?')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`${API_URL}/authorized-devices/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'x-session-token': sessionToken
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            alert(result.message);
-            await loadAuthorizedDevices();
-        } else {
-            alert('Erro: ' + result.error);
-        }
-    } catch (error) {
-        console.error('Erro ao remover dispositivo:', error);
-        alert('Erro ao remover dispositivo');
-    }
-}
-
-// ============================================
 // FUNÇÕES AUXILIARES
 // ============================================
 
 function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function formatDate(dateString) {
@@ -711,23 +453,3 @@ function formatDate(dateString) {
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR');
 }
-
-function formatDateTime(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
-}
-
-// Fechar modais ao clicar fora
-window.onclick = function(event) {
-    const modalForm = document.getElementById('modalForm');
-    const modalView = document.getElementById('modalView');
-    
-    if (event.target === modalForm) {
-        closeForm();
-    }
-    
-    if (event.target === modalView) {
-        closeViewModal();
-    }
-};
