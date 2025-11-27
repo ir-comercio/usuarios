@@ -20,12 +20,10 @@ const app = express();
 // CONFIGURAÇÃO DO SUPABASE
 // ============================================
 
-// Log das variáveis (sem expor valores completos)
 console.log('🔍 Verificando variáveis de ambiente...');
 console.log('PORT:', process.env.PORT || '3000');
 console.log('SUPABASE_URL presente?', !!process.env.SUPABASE_URL);
 console.log('SUPABASE_SERVICE_ROLE presente?', !!process.env.SUPABASE_SERVICE_ROLE);
-console.log('PORTAL_URL:', process.env.PORTAL_URL || 'não definida');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
@@ -34,8 +32,6 @@ if (!supabaseUrl || !supabaseServiceRole) {
     console.error('❌ ERRO: Variáveis de ambiente ausentes!');
     console.error('SUPABASE_URL:', supabaseUrl ? 'OK' : 'FALTANDO');
     console.error('SUPABASE_SERVICE_ROLE:', supabaseServiceRole ? 'OK' : 'FALTANDO');
-    
-    // NÃO encerrar imediatamente - deixar o servidor subir para debug
     console.error('⚠️  Servidor iniciará em modo de erro para diagnóstico');
 }
 
@@ -74,6 +70,9 @@ app.use((req, res, next) => {
     next();
 });
 
+// Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Middleware para verificar se o Supabase está configurado
 function requireSupabase(req, res, next) {
     if (!supabase) {
@@ -90,52 +89,19 @@ function requireSupabase(req, res, next) {
     next();
 }
 
-// Middleware de autenticação para rotas da API
-async function requireAuth(req, res, next) {
-    // Permitir acesso público a health check e arquivos estáticos
-    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/api') === false) {
-        return next();
-    }
-    
-    // Verificar se há sessionToken nos headers
-    const sessionToken = req.headers['x-session-token'] || req.query.sessionToken;
-    
-    if (!sessionToken) {
-        console.log('❌ Acesso negado: sem sessionToken');
-        return res.status(401).json({
-            success: false,
-            error: 'Não autenticado',
-            message: 'Token de sessão não fornecido'
-        });
-    }
-    
-    console.log('✅ Token de sessão presente:', sessionToken.substring(0, 10) + '...');
-    
-    next();
-}
-
-// Aplicar middlewares nas rotas da API
-app.use('/api', requireAuth, requireSupabase);
-
-// Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
-app.use(express.static(path.join(__dirname, 'public')));
-
 // ============================================
 // FUNÇÕES AUXILIARES
 // ============================================
 
-// Hash de senha
 async function hashPassword(password) {
     const salt = await bcrypt.genSalt(10);
     return bcrypt.hash(password, salt);
 }
 
-// Verificar senha
 async function verifyPassword(password, hash) {
     return bcrypt.compare(password, hash);
 }
 
-// Registrar tentativa de login
 async function logLoginAttempt(username, ipAddress, deviceToken, success, failureReason = null) {
     if (!supabase) return;
     
@@ -161,21 +127,26 @@ async function logLoginAttempt(username, ipAddress, deviceToken, success, failur
 // ============================================
 
 // GET /api/users - Listar todos os usuários
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', requireSupabase, async (req, res) => {
     try {
+        console.log('📥 Buscando usuários no Supabase...');
+        
         const { data, error } = await supabase
             .from('users')
             .select('*')
             .order('created_at', { ascending: false });
 
         if (error) {
-            console.error('Erro ao buscar usuários:', error);
+            console.error('❌ Erro do Supabase:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar usuários',
-                message: error.message
+                message: error.message,
+                details: error
             });
         }
+
+        console.log(`✅ ${data?.length || 0} usuários encontrados`);
 
         // Remover senhas da resposta
         const usersWithoutPasswords = data.map(user => {
@@ -189,7 +160,7 @@ app.get('/api/users', async (req, res) => {
             total: usersWithoutPasswords.length
         });
     } catch (error) {
-        console.error('Erro ao buscar usuários:', error);
+        console.error('❌ Erro ao buscar usuários:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -199,7 +170,7 @@ app.get('/api/users', async (req, res) => {
 });
 
 // GET /api/users/:id - Buscar usuário específico
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:id', requireSupabase, async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('users')
@@ -221,7 +192,7 @@ app.get('/api/users/:id', async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('Erro ao buscar usuário:', error);
+        console.error('❌ Erro ao buscar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -231,7 +202,7 @@ app.get('/api/users/:id', async (req, res) => {
 });
 
 // POST /api/users - Criar novo usuário
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', requireSupabase, async (req, res) => {
     try {
         const { username, password, name, is_admin } = req.body;
 
@@ -275,7 +246,7 @@ app.post('/api/users', async (req, res) => {
             .single();
 
         if (error) {
-            console.error('Erro ao criar usuário:', error);
+            console.error('❌ Erro ao criar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao criar usuário',
@@ -291,7 +262,7 @@ app.post('/api/users', async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('Erro ao criar usuário:', error);
+        console.error('❌ Erro ao criar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -301,7 +272,7 @@ app.post('/api/users', async (req, res) => {
 });
 
 // PUT /api/users/:id - Atualizar usuário
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', requireSupabase, async (req, res) => {
     try {
         const { username, password, name, is_admin, is_active } = req.body;
         
@@ -325,7 +296,7 @@ app.put('/api/users/:id', async (req, res) => {
             .single();
 
         if (error) {
-            console.error('Erro ao atualizar usuário:', error);
+            console.error('❌ Erro ao atualizar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao atualizar usuário',
@@ -341,7 +312,7 @@ app.put('/api/users/:id', async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('Erro ao atualizar usuário:', error);
+        console.error('❌ Erro ao atualizar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -351,7 +322,7 @@ app.put('/api/users/:id', async (req, res) => {
 });
 
 // DELETE /api/users/:id - Deletar usuário
-app.delete('/api/users/:id', async (req, res) => {
+app.delete('/api/users/:id', requireSupabase, async (req, res) => {
     try {
         const { error } = await supabase
             .from('users')
@@ -359,7 +330,7 @@ app.delete('/api/users/:id', async (req, res) => {
             .eq('id', req.params.id);
 
         if (error) {
-            console.error('Erro ao deletar usuário:', error);
+            console.error('❌ Erro ao deletar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao deletar usuário',
@@ -372,7 +343,7 @@ app.delete('/api/users/:id', async (req, res) => {
             message: 'Usuário removido com sucesso'
         });
     } catch (error) {
-        console.error('Erro ao deletar usuário:', error);
+        console.error('❌ Erro ao deletar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -382,7 +353,7 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // PATCH /api/users/:id/toggle-status - Ativar/Desativar usuário
-app.patch('/api/users/:id/toggle-status', async (req, res) => {
+app.patch('/api/users/:id/toggle-status', requireSupabase, async (req, res) => {
     try {
         // Buscar usuário atual
         const { data: currentUser } = await supabase
@@ -407,7 +378,7 @@ app.patch('/api/users/:id/toggle-status', async (req, res) => {
             .single();
 
         if (error) {
-            console.error('Erro ao alterar status:', error);
+            console.error('❌ Erro ao alterar status:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao alterar status',
@@ -423,7 +394,7 @@ app.patch('/api/users/:id/toggle-status', async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('Erro ao alterar status:', error);
+        console.error('❌ Erro ao alterar status:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -436,8 +407,7 @@ app.patch('/api/users/:id/toggle-status', async (req, res) => {
 // ROTAS DA API - LOGIN ATTEMPTS
 // ============================================
 
-// GET /api/login-attempts - Listar tentativas de login
-app.get('/api/login-attempts', async (req, res) => {
+app.get('/api/login-attempts', requireSupabase, async (req, res) => {
     try {
         const { username, limit = 100 } = req.query;
 
@@ -454,7 +424,7 @@ app.get('/api/login-attempts', async (req, res) => {
         const { data, error } = await query;
 
         if (error) {
-            console.error('Erro ao buscar tentativas de login:', error);
+            console.error('❌ Erro ao buscar tentativas:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar tentativas de login',
@@ -468,10 +438,10 @@ app.get('/api/login-attempts', async (req, res) => {
             total: data.length
         });
     } catch (error) {
-        console.error('Erro ao buscar tentativas de login:', error);
+        console.error('❌ Erro:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro interno do servidor',
+            error: 'Erro interno',
             message: error.message
         });
     }
@@ -481,8 +451,7 @@ app.get('/api/login-attempts', async (req, res) => {
 // ROTAS DA API - DISPOSITIVOS AUTORIZADOS
 // ============================================
 
-// GET /api/authorized-devices - Listar dispositivos autorizados
-app.get('/api/authorized-devices', async (req, res) => {
+app.get('/api/authorized-devices', requireSupabase, async (req, res) => {
     try {
         const { username } = req.query;
 
@@ -498,7 +467,7 @@ app.get('/api/authorized-devices', async (req, res) => {
         const { data, error } = await query;
 
         if (error) {
-            console.error('Erro ao buscar dispositivos:', error);
+            console.error('❌ Erro ao buscar dispositivos:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar dispositivos',
@@ -512,17 +481,16 @@ app.get('/api/authorized-devices', async (req, res) => {
             total: data.length
         });
     } catch (error) {
-        console.error('Erro ao buscar dispositivos:', error);
+        console.error('❌ Erro:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro interno do servidor',
+            error: 'Erro interno',
             message: error.message
         });
     }
 });
 
-// DELETE /api/authorized-devices/:id - Remover dispositivo
-app.delete('/api/authorized-devices/:id', async (req, res) => {
+app.delete('/api/authorized-devices/:id', requireSupabase, async (req, res) => {
     try {
         const { error } = await supabase
             .from('authorized_devices')
@@ -530,7 +498,7 @@ app.delete('/api/authorized-devices/:id', async (req, res) => {
             .eq('id', req.params.id);
 
         if (error) {
-            console.error('Erro ao remover dispositivo:', error);
+            console.error('❌ Erro ao remover dispositivo:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao remover dispositivo',
@@ -543,10 +511,10 @@ app.delete('/api/authorized-devices/:id', async (req, res) => {
             message: 'Dispositivo removido com sucesso'
         });
     } catch (error) {
-        console.error('Erro ao remover dispositivo:', error);
+        console.error('❌ Erro:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro interno do servidor',
+            error: 'Erro interno',
             message: error.message
         });
     }
@@ -556,8 +524,7 @@ app.delete('/api/authorized-devices/:id', async (req, res) => {
 // ROTAS DA API - DASHBOARD
 // ============================================
 
-// GET /api/dashboard - Estatísticas
-app.get('/api/dashboard', async (req, res) => {
+app.get('/api/dashboard', requireSupabase, async (req, res) => {
     try {
         // Buscar usuários
         const { data: users } = await supabase
@@ -588,7 +555,7 @@ app.get('/api/dashboard', async (req, res) => {
             data: stats
         });
     } catch (error) {
-        console.error('Erro ao gerar dashboard:', error);
+        console.error('❌ Erro ao gerar dashboard:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao gerar dashboard',
@@ -667,18 +634,12 @@ app.listen(PORT, () => {
     console.log(`🌐 Portal: ${PORTAL_URL}`);
     console.log('');
     console.log('📋 Endpoints disponíveis:');
-    console.log('   GET    /                           - Frontend');
-    console.log('   GET    /health                     - Status do servidor');
+    console.log('   GET    /health                     - Status');
     console.log('   GET    /api/users                  - Listar usuários');
-    console.log('   GET    /api/users/:id              - Buscar usuário');
     console.log('   POST   /api/users                  - Criar usuário');
     console.log('   PUT    /api/users/:id              - Atualizar usuário');
     console.log('   DELETE /api/users/:id              - Deletar usuário');
     console.log('   PATCH  /api/users/:id/toggle-status - Ativar/Desativar');
-    console.log('   GET    /api/login-attempts         - Tentativas de login');
-    console.log('   GET    /api/authorized-devices     - Dispositivos autorizados');
-    console.log('   DELETE /api/authorized-devices/:id - Remover dispositivo');
-    console.log('   GET    /api/dashboard              - Estatísticas');
     console.log('===============================================');
     console.log('');
 });
