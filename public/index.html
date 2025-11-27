@@ -30,7 +30,7 @@
             <div class="dashboard-grid">
                 <div class="stat-card">
                     <div class="stat-label">Total</div>
-                    <div class="stat-value stat-primary" id="statTotal">0</div>
+                    <div class="stat-value" id="statTotal">0</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Ativos</div>
@@ -46,11 +46,23 @@
                 </div>
             </div>
 
-            <!-- FILTRO DE PESQUISA -->
+            <!-- FILTROS -->
             <div class="card">
-                <div style="margin-bottom: 0;">
-                    <label for="search" style="display: block; margin-bottom: 8px; font-weight: 500;">Pesquisar:</label>
-                    <input type="text" id="search" placeholder="Pesquisar por nome ou usuário..." oninput="filterUsers()" style="width: 100%;">
+                <h3>Filtros</h3>
+                <div class="filters">
+                    <input type="text" id="searchInput" placeholder="Pesquisar por nome ou usuário..." oninput="filterUsers()">
+                    
+                    <select id="filterStatus" onchange="filterUsers()">
+                        <option value="all">Todos os Status</option>
+                        <option value="active">Ativos</option>
+                        <option value="inactive">Inativos</option>
+                    </select>
+
+                    <select id="filterAdmin" onchange="filterUsers()">
+                        <option value="all">Todos os Tipos</option>
+                        <option value="admin">Administradores</option>
+                        <option value="user">Usuários</option>
+                    </select>
                 </div>
             </div>
 
@@ -118,6 +130,7 @@
             </div>
         </div>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
