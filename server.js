@@ -3,7 +3,11 @@
 // Sistema completo integrado com Supabase
 // ============================================
 
-require('dotenv').config();
+// Carregar variáveis de ambiente (apenas em desenvolvimento)
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+}
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -16,20 +20,39 @@ const app = express();
 // CONFIGURAÇÃO DO SUPABASE
 // ============================================
 
+// Log das variáveis (sem expor valores completos)
+console.log('🔍 Verificando variáveis de ambiente...');
+console.log('PORT:', process.env.PORT || '3000');
+console.log('SUPABASE_URL presente?', !!process.env.SUPABASE_URL);
+console.log('SUPABASE_SERVICE_ROLE presente?', !!process.env.SUPABASE_SERVICE_ROLE);
+console.log('PORTAL_URL:', process.env.PORTAL_URL || 'não definida');
+
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
 
 if (!supabaseUrl || !supabaseServiceRole) {
-    console.error('❌ ERRO: Variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE são obrigatórias');
-    process.exit(1);
+    console.error('❌ ERRO: Variáveis de ambiente ausentes!');
+    console.error('SUPABASE_URL:', supabaseUrl ? 'OK' : 'FALTANDO');
+    console.error('SUPABASE_SERVICE_ROLE:', supabaseServiceRole ? 'OK' : 'FALTANDO');
+    
+    // NÃO encerrar imediatamente - deixar o servidor subir para debug
+    console.error('⚠️  Servidor iniciará em modo de erro para diagnóstico');
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceRole, {
-    auth: {
-        autoRefreshToken: false,
-        persistSession: false
+let supabase;
+if (supabaseUrl && supabaseServiceRole) {
+    try {
+        supabase = createClient(supabaseUrl, supabaseServiceRole, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        });
+        console.log('✅ Cliente Supabase criado com sucesso');
+    } catch (error) {
+        console.error('❌ Erro ao criar cliente Supabase:', error.message);
     }
-});
+}
 
 // ============================================
 // CONFIGURAÇÃO
@@ -51,6 +74,22 @@ app.use((req, res, next) => {
     next();
 });
 
+// Middleware para verificar se o Supabase está configurado
+function requireSupabase(req, res, next) {
+    if (!supabase) {
+        return res.status(503).json({
+            success: false,
+            error: 'Serviço indisponível',
+            message: 'Supabase não está configurado. Verifique as variáveis de ambiente.',
+            debug: {
+                supabaseUrl: !!process.env.SUPABASE_URL,
+                supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE
+            }
+        });
+    }
+    next();
+}
+
 // Middleware de autenticação para rotas da API
 async function requireAuth(req, res, next) {
     // Permitir acesso público a health check e arquivos estáticos
@@ -70,15 +109,13 @@ async function requireAuth(req, res, next) {
         });
     }
     
-    // Validar token com o portal (opcional - implementar se necessário)
-    // Por enquanto, apenas verificar se o token existe
     console.log('✅ Token de sessão presente:', sessionToken.substring(0, 10) + '...');
     
     next();
 }
 
-// Aplicar middleware nas rotas da API
-app.use('/api', requireAuth);
+// Aplicar middlewares nas rotas da API
+app.use('/api', requireAuth, requireSupabase);
 
 // Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
 app.use(express.static(path.join(__dirname, 'public')));
@@ -100,6 +137,8 @@ async function verifyPassword(password, hash) {
 
 // Registrar tentativa de login
 async function logLoginAttempt(username, ipAddress, deviceToken, success, failureReason = null) {
+    if (!supabase) return;
+    
     try {
         const { error } = await supabase
             .from('login_attempts')
@@ -564,22 +603,41 @@ app.get('/api/dashboard', async (req, res) => {
 
 app.get('/health', async (req, res) => {
     try {
+        const health = {
+            status: 'starting',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+            environment: {
+                nodeEnv: process.env.NODE_ENV,
+                supabaseUrl: !!process.env.SUPABASE_URL,
+                supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE,
+                portalUrl: !!process.env.PORTAL_URL
+            },
+            supabase: 'checking'
+        };
+
+        if (!supabase) {
+            health.status = 'unhealthy';
+            health.supabase = 'not configured';
+            return res.status(503).json(health);
+        }
+
         // Testar conexão com Supabase
         const { error } = await supabase
             .from('users')
             .select('count')
             .limit(1);
 
-        res.json({
-            status: error ? 'unhealthy' : 'healthy',
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString(),
-            supabase: error ? 'disconnected' : 'connected'
-        });
+        health.status = error ? 'unhealthy' : 'healthy';
+        health.supabase = error ? `error: ${error.message}` : 'connected';
+
+        res.status(error ? 503 : 200).json(health);
     } catch (error) {
         res.status(500).json({
-            status: 'unhealthy',
-            error: error.message
+            status: 'error',
+            error: error.message,
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -605,7 +663,8 @@ app.listen(PORT, () => {
     console.log('===============================================');
     console.log(`✅ Servidor rodando na porta: ${PORT}`);
     console.log(`🌐 URL: http://localhost:${PORT}`);
-    console.log(`🗄️  Supabase: ${supabaseUrl}`);
+    console.log(`🗄️  Supabase: ${supabaseUrl || 'NÃO CONFIGURADO'}`);
+    console.log(`🌐 Portal: ${PORTAL_URL}`);
     console.log('');
     console.log('📋 Endpoints disponíveis:');
     console.log('   GET    /                           - Frontend');
