@@ -432,3 +432,50 @@ tbody tr:hover { background: var(--table-hover); }
     .modal-actions { flex-direction: column-reverse; }
     .modal-actions button { width: 100%; }
 }
+
+/* ============================================
+   NOTIFICAÇÕES
+   ============================================ */
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    max-width: 400px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.notification-success {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+}
+
+.notification-error {
+    background: linear-gradient(135deg, #f44336, #da190b);
+}
+
+.notification-info {
+    background: linear-gradient(135deg, #2196F3, #0b7dda);
+}
+
+.notification-warning {
+    background: linear-gradient(135deg, #ff9800, #fb8c00);
+}
