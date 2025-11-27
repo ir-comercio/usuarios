@@ -1,5 +1,5 @@
-// CONFIGURAÇÃO
 const PORTAL_URL = 'https://ir-comercio-portal-zcan.onrender.com';
+const API_URL = 'https://usuarios-effz.onrender.com';
 const API_URL = '/api';
 
 let users = [];
@@ -89,7 +89,7 @@ async function checkServerStatus() {
             headers: { 'X-Session-Token': sessionToken },
             signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
 
         if (response.status === 401) {
@@ -100,14 +100,14 @@ async function checkServerStatus() {
 
         const wasOffline = !isOnline;
         isOnline = response.ok;
-        
+
         if (wasOffline && isOnline) {
             console.log('✅ Servidor ONLINE');
             await loadUsers();
         } else if (!wasOffline && !isOnline) {
             console.log('❌ Servidor OFFLINE');
         }
-        
+
         updateConnectionStatus();
         return isOnline;
     } catch (error) {
@@ -144,7 +144,7 @@ async function loadUsers() {
         if (!response.ok) return;
 
         const data = await response.json();
-        
+
         if (data.success) {
             const newHash = JSON.stringify(data.data.map(u => u.id));
 
@@ -173,7 +173,7 @@ function updateDashboard() {
     const ativos = users.filter(u => u.is_active).length;
     const inativos = total - ativos;
     const admins = users.filter(u => u.is_admin).length;
-    
+
     document.getElementById('statTotal').textContent = total;
     document.getElementById('statAtivos').textContent = ativos;
     document.getElementById('statInativos').textContent = inativos;
@@ -184,7 +184,7 @@ function filterUsers() {
     const searchTerm = document.getElementById('search').value.toLowerCase();
     const filterStatus = document.getElementById('filterStatus').value;
     const filterAdmin = document.getElementById('filterAdmin').value;
-    
+
     let filtered = users;
 
     if (filterStatus !== 'all') {
@@ -231,7 +231,7 @@ function getTimeAgo(timestamp) {
 
 function renderUsers(usersToRender = users) {
     const container = document.getElementById('usersContainer');
-    
+
     if (!usersToRender || usersToRender.length === 0) {
         container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-secondary);">Nenhum usuário encontrado</div>';
         return;
@@ -270,7 +270,7 @@ function renderUsers(usersToRender = users) {
             </table>
         </div>
     `;
-    
+
     container.innerHTML = table;
 }
 
@@ -346,7 +346,7 @@ function showFormModal(editingId = null) {
         };
 
         const editId = document.getElementById('modalEditId').value;
-        
+
         // Verificar username duplicado
         const usernameDuplicado = users.find(u => u.username.toLowerCase() === formData.username.toLowerCase() && u.id !== editId);
         if (usernameDuplicado) {
@@ -376,7 +376,7 @@ function showFormModal(editingId = null) {
         showMessage(isEditing ? 'Atualização cancelada' : 'Registro cancelado', 'error');
         closeModal();
     });
-    
+
     setTimeout(() => document.getElementById('modalName').focus(), 100);
 }
 
@@ -401,9 +401,9 @@ async function syncWithServer(formData, editId = null, tempId = null) {
             mostrarTelaAcessoNegado('Sua sessão expirou');
             return;
         }
-        
+
         if (!response.ok) throw new Error(`Erro ${response.status}`);
-        
+
         const result = await response.json();
         const savedData = result.data || result;
 
@@ -431,7 +431,7 @@ async function syncWithServer(formData, editId = null, tempId = null) {
 window.viewUser = function(id) {
     const user = users.find(u => u.id === id);
     if (!user) return;
-    
+
     const modalHTML = `
         <div class="modal-overlay" id="viewModal">
             <div class="modal-content">
@@ -466,7 +466,7 @@ window.viewUser = function(id) {
             </div>
         </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 };
 
@@ -477,7 +477,7 @@ window.editUser = function(id) {
 window.toggleStatus = async function(id) {
     const user = users.find(u => u.id === id);
     if (!user) return;
-    
+
     const action = user.is_active ? 'desativar' : 'ativar';
     const confirmed = await showConfirm(`Tem certeza que deseja ${action} este usuário?`, {
         title: 'Alterar Status',
@@ -502,7 +502,7 @@ window.toggleStatus = async function(id) {
                 });
 
                 if (!response.ok) throw new Error('Erro ao alterar status');
-                
+
                 const result = await response.json();
                 if (result.data) {
                     users[index] = result.data;
@@ -603,13 +603,13 @@ function showConfirm(message, options = {}) {
 function showMessage(message, type) {
     const oldMessages = document.querySelectorAll('.floating-message');
     oldMessages.forEach(msg => msg.remove());
-    
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `floating-message ${type}`;
     messageDiv.textContent = message;
-    
+
     document.body.appendChild(messageDiv);
-    
+
     setTimeout(() => {
         messageDiv.style.animation = 'slideOut 0.3s ease forwards';
         setTimeout(() => messageDiv.remove(), 300);
