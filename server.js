@@ -403,6 +403,58 @@ app.patch('/api/users/:id/toggle-status', requireSupabase, async (req, res) => {
     }
 });
 
+// PATCH /api/users/:id/reset-password - Resetar senha e fazer hash
+app.patch('/api/users/:id/reset-password', requireSupabase, async (req, res) => {
+    try {
+        const { password } = req.body;
+
+        if (!password || password.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                error: 'Senha não pode ser vazia'
+            });
+        }
+
+        // Hash da nova senha
+        const hashedPassword = await hashPassword(password);
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ password: hashedPassword })
+            .eq('id', req.params.id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('❌ Erro ao resetar senha:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Erro ao resetar senha',
+                message: error.message
+            });
+        }
+
+        const { password: _, ...userWithoutPassword } = data;
+
+        res.json({
+            success: true,
+            message: 'Senha resetada com sucesso',
+            data: userWithoutPassword
+        });
+    } catch (error) {
+        console.error('❌ Erro ao resetar senha:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno do servidor',
+            message: error.message
+        });
+    }
+});
+
+// ============================================
+// ROTAS DA API - LOGIN ATTEMPTS
+// ============================================
+
 // ============================================
 // ROTAS DA API - LOGIN ATTEMPTS
 // ============================================
@@ -639,8 +691,9 @@ app.listen(PORT, () => {
     console.log('   POST   /api/users                  - Criar usuário');
     console.log('   PUT    /api/users/:id              - Atualizar usuário');
     console.log('   DELETE /api/users/:id              - Deletar usuário');
-    console.log('   PATCH  /api/users/:id/toggle-status - Ativar/Desativar');
-    console.log('===============================================');
+console.log('   PATCH  /api/users/:id/toggle-status - Ativar/Desativar');
+console.log('   PATCH  /api/users/:id/reset-password - Resetar senha');
+console.log('===============================================');
     console.log('');
 });
 
