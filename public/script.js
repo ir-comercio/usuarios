@@ -1,6 +1,6 @@
 // CONFIGURAÇÃO
 const PORTAL_URL = 'https://ir-comercio-portal-zcan.onrender.com';
-const API_URL = 'https://usuarios-effz.onrender.com';
+const API_URL = '/api';
 
 let users = [];
 let isOnline = false;
