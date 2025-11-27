@@ -7,6 +7,10 @@ let isOnline = false;
 let lastDataHash = '';
 let sessionToken = null;
 
+// ====== SISTEMA DE ALERTAS ======
+let unreadAlerts = [];
+let alertCheckInterval = null;
+
 // LOG APENAS NO INÍCIO
 console.log('🚀 Gerenciamento de Usuários iniciado');
 
@@ -73,7 +77,213 @@ function inicializarApp() {
     checkServerStatus();
     setInterval(checkServerStatus, 15000);
     startPolling();
+    
+    // ====== INICIAR SISTEMA DE ALERTAS ======
+    startAlertSystem();
 }
+
+// ==========================================
+// SISTEMA DE ALERTAS
+// ==========================================
+
+function startAlertSystem() {
+    // Verificar alertas a cada 10 segundos
+    checkAlerts();
+    alertCheckInterval = setInterval(checkAlerts, 10000);
+}
+
+async function checkAlerts() {
+    if (!isOnline) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/alerts?unread=true&limit=10`);
+        if (!response.ok) return;
+        
+        const result = await response.json();
+        if (!result.success || !result.data) return;
+        
+        const newAlerts = result.data;
+        
+        // Verificar se há novos alertas
+        const newAlertIds = newAlerts.map(a => a.id);
+        const oldAlertIds = unreadAlerts.map(a => a.id);
+        
+        const reallyNewAlerts = newAlerts.filter(alert => !oldAlertIds.includes(alert.id));
+        
+        // Mostrar notificação para novos alertas
+        reallyNewAlerts.forEach(alert => {
+            showAlertNotification(alert);
+        });
+        
+        unreadAlerts = newAlerts;
+        updateAlertBadge();
+        
+    } catch (error) {
+        // Silencioso
+    }
+}
+
+function showAlertNotification(alert) {
+    const notification = document.createElement('div');
+    notification.className = `alert-notification severity-${alert.severity}`;
+    
+    const icon = getAlertIcon(alert.alert_type);
+    const title = getAlertTitle(alert.alert_type);
+    
+    notification.innerHTML = `
+        <div class="alert-icon">${icon}</div>
+        <div class="alert-content">
+            <div class="alert-title">${title}</div>
+            <div class="alert-message">${alert.message}</div>
+            <div class="alert-meta">
+                ${alert.ip_address ? `<span>IP: ${alert.ip_address}</span>` : ''}
+                ${alert.username ? `<span>Usuário: ${alert.username}</span>` : ''}
+                <span>${getTimeAgo(alert.created_at)}</span>
+            </div>
+        </div>
+        <button class="alert-close" onclick="this.parentElement.remove()">×</button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remover após 15 segundos
+    setTimeout(() => {
+        notification.style.animation = 'slideOutRight 0.3s ease forwards';
+        setTimeout(() => notification.remove(), 300);
+    }, 15000);
+}
+
+function getAlertIcon(type) {
+    const icons = {
+        'unauthorized_ip': '🔒',
+        'after_hours': '⏰',
+        'multiple_failures': '⚠️',
+        'suspicious_activity': '🚨'
+    };
+    return icons[type] || '🔔';
+}
+
+function getAlertTitle(type) {
+    const titles = {
+        'unauthorized_ip': 'Acesso Não Autorizado',
+        'after_hours': 'Acesso Fora do Horário',
+        'multiple_failures': 'Múltiplas Tentativas Falhas',
+        'suspicious_activity': 'Atividade Suspeita'
+    };
+    return titles[type] || 'Alerta de Segurança';
+}
+
+function updateAlertBadge() {
+    // Remover badge existente
+    const existingBadge = document.getElementById('alertBadge');
+    if (existingBadge) existingBadge.remove();
+    
+    if (unreadAlerts.length === 0) return;
+    
+    // Criar novo badge
+    const badge = document.createElement('div');
+    badge.id = 'alertBadge';
+    badge.className = 'alert-badge';
+    badge.textContent = unreadAlerts.length;
+    badge.onclick = showAlertsPanel;
+    badge.title = `${unreadAlerts.length} alerta(s) não lido(s)`;
+    
+    document.body.appendChild(badge);
+}
+
+function showAlertsPanel() {
+    // Remover painel existente se houver
+    const existingPanel = document.getElementById('alertsPanel');
+    if (existingPanel) {
+        existingPanel.remove();
+        return;
+    }
+    
+    const panel = document.createElement('div');
+    panel.id = 'alertsPanel';
+    panel.className = 'alerts-panel';
+    
+    let alertsHTML = '';
+    
+    if (unreadAlerts.length === 0) {
+        alertsHTML = '<div style="text-align: center; padding: 2rem; color: #9CA3AF;">Nenhum alerta novo</div>';
+    } else {
+        alertsHTML = unreadAlerts.map(alert => `
+            <div class="alert-item severity-${alert.severity}">
+                <div class="alert-item-header">
+                    <span class="alert-item-icon">${getAlertIcon(alert.alert_type)}</span>
+                    <strong>${getAlertTitle(alert.alert_type)}</strong>
+                    <span class="alert-item-time">${getTimeAgo(alert.created_at)}</span>
+                </div>
+                <div class="alert-item-message">${alert.message}</div>
+                ${alert.ip_address || alert.username ? `
+                    <div class="alert-item-meta">
+                        ${alert.ip_address ? `<span>IP: ${alert.ip_address}</span>` : ''}
+                        ${alert.username ? `<span>Usuário: ${alert.username}</span>` : ''}
+                    </div>
+                ` : ''}
+                <div class="alert-item-actions">
+                    <button class="btn-mark-read" onclick="markAlertRead('${alert.id}')">Marcar como lido</button>
+                    <button class="btn-dismiss" onclick="dismissAlert('${alert.id}', this)">Descartar</button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    panel.innerHTML = `
+        <div class="alerts-panel-header">
+            <h3>Alertas de Segurança</h3>
+            <button class="alerts-panel-close" onclick="document.getElementById('alertsPanel').remove()">×</button>
+        </div>
+        <div class="alerts-panel-content">
+            ${alertsHTML}
+        </div>
+    `;
+    
+    document.body.appendChild(panel);
+}
+
+async function markAlertRead(alertId) {
+    try {
+        const response = await fetch(`${API_URL}/alerts/${alertId}/mark-read`, {
+            method: 'PATCH'
+        });
+        
+        if (response.ok) {
+            // Remover da lista de não lidos
+            unreadAlerts = unreadAlerts.filter(a => a.id !== alertId);
+            updateAlertBadge();
+            
+            // Fechar e reabrir painel se ainda houver alertas
+            const panel = document.getElementById('alertsPanel');
+            if (panel) {
+                panel.remove();
+                if (unreadAlerts.length > 0) {
+                    showAlertsPanel();
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao marcar alerta:', error);
+    }
+}
+
+async function dismissAlert(alertId, buttonElement) {
+    // Animação de saída
+    const alertItem = buttonElement.closest('.alert-item');
+    alertItem.style.animation = 'slideOutRight 0.3s ease forwards';
+    
+    setTimeout(() => {
+        alertItem.remove();
+    }, 300);
+    
+    // Marcar como lido no servidor
+    await markAlertRead(alertId);
+}
+
+// ==========================================
+// FUNÇÕES ORIGINAIS
+// ==========================================
 
 window.toggleForm = function() {
     showFormModal(null);
@@ -181,7 +391,7 @@ function updateDashboard() {
 }
 
 function filterUsers() {
-    const searchTerm = document.getElementById('search').value.toLowerCase();
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     const filterStatus = document.getElementById('filterStatus').value;
     const filterAdmin = document.getElementById('filterAdmin').value;
     
@@ -219,13 +429,13 @@ function getTimeAgo(timestamp) {
     const now = new Date();
     const past = new Date(timestamp);
     const diffInSeconds = Math.floor((now - past) / 1000);
-    if (diffInSeconds < 60) return `${diffInSeconds}s`;
+    if (diffInSeconds < 60) return `há ${diffInSeconds}s`;
     const diffInMinutes = Math.floor(diffInSeconds / 60);
-    if (diffInMinutes < 60) return `${diffInMinutes}min`;
+    if (diffInMinutes < 60) return `há ${diffInMinutes}min`;
     const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}h`;
+    if (diffInHours < 24) return `há ${diffInHours}h`;
     const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 7) return `${diffInDays}d`;
+    if (diffInDays < 7) return `há ${diffInDays}d`;
     return past.toLocaleDateString('pt-BR');
 }
 
