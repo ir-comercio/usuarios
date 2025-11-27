@@ -483,6 +483,9 @@ function switchTab(tabName) {
 // ============================================
 
 function toggleForm() {
+    // Fechar outros modais primeiro
+    closeViewModal();
+    
     editingUserId = null;
     document.getElementById('formTitle').textContent = 'Novo Usuário';
     document.getElementById('userForm').reset();
