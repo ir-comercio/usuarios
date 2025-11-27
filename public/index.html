@@ -16,28 +16,28 @@
     <div class="app-content">
         <div class="container">
             <div class="header">
-                <h1>👥 Gerenciamento de Usuários</h1>
+                <h1>Gerenciamento de Usuários</h1>
                 <div id="connectionStatus" class="connection-status offline">
                     <span class="status-dot"></span>
                 </div>
             </div>
 
             <div class="button-wrapper">
-                <button onclick="toggleForm()" class="register">➕ Novo Usuário</button>
+                <button onclick="toggleForm()" class="register">Novo Usuário</button>
             </div>
 
             <!-- Dashboard -->
             <div class="dashboard-grid">
                 <div class="stat-card">
-                    <div class="stat-label">Total de Usuários</div>
+                    <div class="stat-label">Total</div>
                     <div class="stat-value" id="statTotal">0</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Usuários Ativos</div>
+                    <div class="stat-label">Ativos</div>
                     <div class="stat-value stat-success" id="statAtivos">0</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Usuários Inativos</div>
+                    <div class="stat-label">Inativos</div>
                     <div class="stat-value stat-danger" id="statInativos">0</div>
                 </div>
                 <div class="stat-card">
@@ -48,62 +48,34 @@
 
             <!-- FILTROS -->
             <div class="card">
-                <h2>Filtros</h2>
-                <div class="filter-section">
-                    <div class="form-group">
-                        <label for="search">Pesquisar</label>
-                        <input type="text" id="search" placeholder="Nome, username..." oninput="filterUsers()">
-                    </div>
-                    <div class="form-group">
-                        <label for="filterStatus">Status</label>
-                        <select id="filterStatus" onchange="filterUsers()">
-                            <option value="">Todos</option>
-                            <option value="true">Ativos</option>
-                            <option value="false">Inativos</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="filterAdmin">Tipo</label>
-                        <select id="filterAdmin" onchange="filterUsers()">
-                            <option value="">Todos</option>
-                            <option value="true">Administradores</option>
-                            <option value="false">Usuários</option>
-                        </select>
-                    </div>
+                <h3>Filtros</h3>
+                <div class="filters">
+                    <input type="text" id="searchInput" placeholder="Pesquisar por nome ou usuário..." oninput="filterUsers()">
+                    
+                    <select id="filterStatus" onchange="filterUsers()">
+                        <option value="all">Todos os Status</option>
+                        <option value="active">Ativos</option>
+                        <option value="inactive">Inativos</option>
+                    </select>
+
+                    <select id="filterAdmin" onchange="filterUsers()">
+                        <option value="all">Todos os Tipos</option>
+                        <option value="admin">Administradores</option>
+                        <option value="user">Usuários</option>
+                    </select>
                 </div>
             </div>
 
-            <!-- Abas -->
+            <!-- LISTA DE USUÁRIOS -->
             <div class="card">
-                <div class="tabs">
-                    <button class="tab-button active" onclick="switchTab('usuarios')">👥 Usuários</button>
-                    <button class="tab-button" onclick="switchTab('tentativas')">🔐 Tentativas de Login</button>
-                    <button class="tab-button" onclick="switchTab('dispositivos')">📱 Dispositivos</button>
-                </div>
-
-                <!-- Aba: Usuários -->
-                <div id="tabUsuarios" class="tab-content active">
-                    <h2>Lista de Usuários</h2>
-                    <div id="usersContainer"></div>
-                </div>
-
-                <!-- Aba: Tentativas de Login -->
-                <div id="tabTentativas" class="tab-content">
-                    <h2>Tentativas de Login (Últimas 100)</h2>
-                    <div id="attemptsContainer"></div>
-                </div>
-
-                <!-- Aba: Dispositivos Autorizados -->
-                <div id="tabDispositivos" class="tab-content">
-                    <h2>Dispositivos Autorizados</h2>
-                    <div id="devicesContainer"></div>
-                </div>
+                <h3>Usuários Cadastrados</h3>
+                <div id="usersContainer"></div>
             </div>
         </div>
     </div>
 
     <!-- MODAL: FORMULÁRIO DE USUÁRIO -->
-    <div id="modalForm" class="modal">
+    <div id="modalForm" class="modal" style="display: none;">
         <div class="modal-content">
             <span class="close" onclick="closeForm()">&times;</span>
             <h2 id="formTitle">Novo Usuário</h2>
@@ -126,50 +98,49 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="checkbox-label">
+                    <label>
                         <input type="checkbox" id="is_admin">
-                        <span>Administrador</span>
+                        Administrador
                     </label>
                 </div>
 
                 <div class="form-group">
-                    <label class="checkbox-label">
+                    <label>
                         <input type="checkbox" id="is_active" checked>
-                        <span>Ativo</span>
+                        Ativo
                     </label>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" onclick="closeForm()" class="btn-secondary">Cancelar</button>
-                    <button type="submit" class="btn-primary">Salvar</button>
+                <div class="button-group">
+                    <button type="button" onclick="closeForm()">Cancelar</button>
+                    <button type="submit" class="submit">Salvar</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- MODAL: VISUALIZAR USUÁRIO -->
-    <div id="modalView" class="modal">
+    <div id="modalView" class="modal" style="display: none;">
         <div class="modal-content">
             <span class="close" onclick="closeViewModal()">&times;</span>
             <h2>Detalhes do Usuário</h2>
             <div id="userDetails"></div>
-            <div class="form-actions">
-                <button onclick="closeViewModal()" class="btn-primary">Fechar</button>
+            <div class="button-group">
+                <button onclick="closeViewModal()">Fechar</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: TELA DE ACESSO NEGADO -->
+    <!-- MODAL: ACESSO NEGADO -->
     <div id="modalAccessDenied" class="modal" style="display: none;">
-        <div class="modal-content access-denied">
+        <div class="modal-content">
             <h2>🔒 Acesso Negado</h2>
             <p>Você não tem permissão para acessar este sistema.</p>
             <p>Entre em contato com o administrador.</p>
-            <button onclick="voltarParaPortal()" class="btn-primary">Voltar ao Portal</button>
+            <button onclick="voltarParaPortal()">Voltar ao Portal</button>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
