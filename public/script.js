@@ -2,19 +2,27 @@
 // CONFIGURAÇÃO
 // ============================================
 
+const PORTAL_URL = 'https://ir-comercio-portal-zcan.onrender.com';
 const API_URL = '/api';
+
 let users = [];
 let loginAttempts = [];
 let authorizedDevices = [];
 let isOnline = false;
 let editingUserId = null;
+let sessionToken = null;
 
 // ============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO E AUTENTICAÇÃO
 // ============================================
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Sistema de Gerenciamento de Usuários iniciado');
+    
+    // Verificar autenticação ANTES de tudo
+    if (!verificarAutenticacao()) {
+        return; // Para a execução se não autenticado
+    }
     
     // Mostrar splash screen por 2 segundos
     setTimeout(() => {
@@ -30,6 +38,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(loadAllData, 30000);
     setInterval(checkServerStatus, 15000);
 });
+
+// ============================================
+// AUTENTICAÇÃO VIA PORTAL
+// ============================================
+
+function verificarAutenticacao() {
+    // Verificar se há token na URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('sessionToken');
+
+    if (tokenFromUrl) {
+        // Salvar token no sessionStorage
+        sessionToken = tokenFromUrl;
+        sessionStorage.setItem('usuariosSession', tokenFromUrl);
+        
+        // Limpar URL (remover token)
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        console.log('✅ Autenticado via URL');
+        return true;
+    } else {
+        // Tentar recuperar token do sessionStorage
+        sessionToken = sessionStorage.getItem('usuariosSession');
+        
+        if (sessionToken) {
+            console.log('✅ Autenticado via sessionStorage');
+            return true;
+        }
+    }
+
+    // Se não tem token, bloquear acesso
+    console.log('❌ Não autenticado - redirecionando');
+    mostrarTelaAcessoNegado();
+    return false;
+}
+
+function mostrarTelaAcessoNegado() {
+    // Esconder splash screen
+    document.getElementById('splashScreen').style.display = 'none';
+    
+    // Esconder conteúdo principal
+    document.querySelector('.app-content').style.display = 'none';
+    
+    // Mostrar modal de acesso negado
+    document.getElementById('modalAccessDenied').style.display = 'flex';
+}
+
+function voltarParaPortal() {
+    window.location.href = PORTAL_URL;
+}
 
 // ============================================
 // CONEXÃO COM SERVIDOR
@@ -77,13 +135,20 @@ async function loadAllData() {
 
 async function loadUsers() {
     try {
-        const response = await fetch(`${API_URL}/users`);
+        const response = await fetch(`${API_URL}/users`, {
+            headers: {
+                'x-session-token': sessionToken
+            }
+        });
         const data = await response.json();
         
         if (data.success) {
             users = data.data;
             renderUsers();
             updateFilters();
+        } else if (data.error === 'Não autenticado') {
+            console.error('❌ Sessão expirada');
+            mostrarTelaAcessoNegado();
         }
     } catch (error) {
         console.error('Erro ao carregar usuários:', error);
@@ -92,7 +157,11 @@ async function loadUsers() {
 
 async function loadLoginAttempts() {
     try {
-        const response = await fetch(`${API_URL}/login-attempts?limit=100`);
+        const response = await fetch(`${API_URL}/login-attempts?limit=100`, {
+            headers: {
+                'x-session-token': sessionToken
+            }
+        });
         const data = await response.json();
         
         if (data.success) {
@@ -106,7 +175,11 @@ async function loadLoginAttempts() {
 
 async function loadAuthorizedDevices() {
     try {
-        const response = await fetch(`${API_URL}/authorized-devices`);
+        const response = await fetch(`${API_URL}/authorized-devices`, {
+            headers: {
+                'x-session-token': sessionToken
+            }
+        });
         const data = await response.json();
         
         if (data.success) {
@@ -120,7 +193,11 @@ async function loadAuthorizedDevices() {
 
 async function loadDashboard() {
     try {
-        const response = await fetch(`${API_URL}/dashboard`);
+        const response = await fetch(`${API_URL}/dashboard`, {
+            headers: {
+                'x-session-token': sessionToken
+            }
+        });
         const data = await response.json();
         
         if (data.success) {
@@ -454,14 +531,20 @@ async function handleSubmit(event) {
             // Atualizar usuário existente
             response = await fetch(`${API_URL}/users/${editingUserId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-session-token': sessionToken
+                },
                 body: JSON.stringify(formData)
             });
         } else {
             // Criar novo usuário
             response = await fetch(`${API_URL}/users`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-session-token': sessionToken
+                },
                 body: JSON.stringify(formData)
             });
         }
@@ -488,7 +571,10 @@ async function deleteUser(id, name) {
     
     try {
         const response = await fetch(`${API_URL}/users/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'x-session-token': sessionToken
+            }
         });
         
         const result = await response.json();
@@ -508,7 +594,10 @@ async function deleteUser(id, name) {
 async function toggleUserStatus(id) {
     try {
         const response = await fetch(`${API_URL}/users/${id}/toggle-status`, {
-            method: 'PATCH'
+            method: 'PATCH',
+            headers: {
+                'x-session-token': sessionToken
+            }
         });
         
         const result = await response.json();
@@ -579,7 +668,10 @@ async function removeDevice(id) {
     
     try {
         const response = await fetch(`${API_URL}/authorized-devices/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'x-session-token': sessionToken
+            }
         });
         
         const result = await response.json();
