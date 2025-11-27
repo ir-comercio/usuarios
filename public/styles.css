@@ -734,7 +734,7 @@ tbody tr:hover { background: var(--table-hover); }
     .actions-cell { min-width: auto; }
 }
 /* ============================================
-   ESTILOS ADICIONAIS - GERENCIAMENTO DE USUÁRIOS
+   ESTILOS ESPECÍFICOS - GERENCIAMENTO DE USUÁRIOS
    ============================================ */
 
 /* Abas */
@@ -788,10 +788,6 @@ tbody tr:hover { background: var(--table-hover); }
     cursor: pointer;
 }
 
-.checkbox-label span {
-    font-size: 16px;
-}
-
 /* Badge de status */
 .status-badge {
     display: inline-block;
@@ -832,49 +828,40 @@ tbody tr:hover { background: var(--table-hover); }
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-/* Tabela de usuários */
-.user-table {
+/* Tabelas */
+.user-table, .attempts-table, .devices-table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
 }
 
-.user-table thead {
+.user-table thead, .attempts-table thead, .devices-table thead {
     background: var(--input-bg);
 }
 
-.user-table th {
+.user-table th, .attempts-table th, .devices-table th {
     padding: 12px;
     text-align: left;
     font-weight: 600;
     border-bottom: 2px solid var(--border-color);
 }
 
-.user-table td {
+.user-table td, .attempts-table td, .devices-table td {
     padding: 12px;
     border-bottom: 1px solid var(--border-color);
 }
 
-.user-table tr:hover {
+.user-table tr:hover, .attempts-table tr:hover, .devices-table tr:hover {
     background: rgba(204, 112, 0, 0.05);
 }
 
-.user-table .user-name {
-    font-weight: 600;
-}
-
-.user-table .user-username {
-    color: var(--text-secondary);
-    font-size: 14px;
-}
-
-.user-table .user-actions {
+.user-actions {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
 }
 
-.user-table .btn-action {
+.btn-action {
     padding: 6px 12px;
     font-size: 13px;
     border: none;
@@ -883,96 +870,40 @@ tbody tr:hover { background: var(--table-hover); }
     transition: all 0.3s ease;
 }
 
-.user-table .btn-view {
+.btn-view {
     background: rgba(34, 197, 94, 0.2);
     color: #22C55E;
 }
 
-.user-table .btn-view:hover {
+.btn-view:hover {
     background: rgba(34, 197, 94, 0.3);
 }
 
-.user-table .btn-edit {
+.btn-edit {
     background: rgba(204, 112, 0, 0.2);
     color: #CC7000;
 }
 
-.user-table .btn-edit:hover {
+.btn-edit:hover {
     background: rgba(204, 112, 0, 0.3);
 }
 
-.user-table .btn-delete {
+.btn-delete {
     background: rgba(239, 68, 68, 0.2);
     color: #EF4444;
 }
 
-.user-table .btn-delete:hover {
+.btn-delete:hover {
     background: rgba(239, 68, 68, 0.3);
 }
 
-.user-table .btn-toggle {
+.btn-toggle {
     background: rgba(107, 114, 128, 0.2);
     color: #6B7280;
 }
 
-.user-table .btn-toggle:hover {
+.btn-toggle:hover {
     background: rgba(107, 114, 128, 0.3);
-}
-
-/* Tabela de tentativas de login */
-.attempts-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-    font-size: 14px;
-}
-
-.attempts-table thead {
-    background: var(--input-bg);
-}
-
-.attempts-table th {
-    padding: 10px;
-    text-align: left;
-    font-weight: 600;
-    border-bottom: 2px solid var(--border-color);
-}
-
-.attempts-table td {
-    padding: 10px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.attempts-table tr:hover {
-    background: rgba(204, 112, 0, 0.05);
-}
-
-/* Tabela de dispositivos */
-.devices-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-    font-size: 14px;
-}
-
-.devices-table thead {
-    background: var(--input-bg);
-}
-
-.devices-table th {
-    padding: 10px;
-    text-align: left;
-    font-weight: 600;
-    border-bottom: 2px solid var(--border-color);
-}
-
-.devices-table td {
-    padding: 10px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.devices-table tr:hover {
-    background: rgba(204, 112, 0, 0.05);
 }
 
 /* Detalhes do usuário */
@@ -1011,13 +942,6 @@ tbody tr:hover { background: var(--table-hover); }
     color: var(--text-secondary);
 }
 
-.empty-message svg {
-    width: 64px;
-    height: 64px;
-    margin-bottom: 15px;
-    opacity: 0.5;
-}
-
 /* Acesso Negado */
 .modal-content.access-denied {
     text-align: center;
@@ -1035,47 +959,54 @@ tbody tr:hover { background: var(--table-hover); }
     margin-bottom: 10px;
 }
 
-/* Responsividade para tabelas */
-@media (max-width: 768px) {
-    .user-table, .attempts-table, .devices-table {
-        font-size: 12px;
-    }
-    
-    .user-table th, .user-table td,
-    .attempts-table th, .attempts-table td,
-    .devices-table th, .devices-table td {
-        padding: 8px;
-    }
-    
-    .user-table .user-actions {
-        flex-direction: column;
-        gap: 5px;
-    }
-    
-    .user-table .btn-action {
-        width: 100%;
-    }
+/* Botões dos formulários */
+.form-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: flex-end;
+    margin-top: 30px;
 }
 
-/* Loading spinner */
-.loading-spinner {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(204, 112, 0, 0.3);
-    border-radius: 50%;
-    border-top-color: var(--primary);
-    animation: spin 1s ease-in-out infinite;
+.btn-primary, .btn-secondary, .modal-content.access-denied button {
+    padding: 12px 30px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.btn-primary, .modal-content.access-denied button {
+    background: var(--primary);
+    color: white;
 }
 
-/* Password hint */
-#passwordHint {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-top: 5px;
-    display: block;
+.btn-primary:hover, .modal-content.access-denied button:hover {
+    background: #B36300;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(204, 112, 0, 0.3);
+}
+
+.btn-secondary {
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: #333333;
+}
+
+/* Z-index dos modais */
+#modalForm {
+    z-index: 10000;
+}
+
+#modalView {
+    z-index: 9999;
+}
+
+#modalAccessDenied {
+    z-index: 10001;
 }
