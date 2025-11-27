@@ -3,11 +3,7 @@
 // Sistema completo integrado com Supabase
 // ============================================
 
-// Carregar variáveis de ambiente (apenas em desenvolvimento)
-if (process.env.NODE_ENV !== 'production') {
-    require('dotenv').config();
-}
-
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -20,35 +16,20 @@ const app = express();
 // CONFIGURAÇÃO DO SUPABASE
 // ============================================
 
-console.log('🔍 Verificando variáveis de ambiente...');
-console.log('PORT:', process.env.PORT || '3000');
-console.log('SUPABASE_URL presente?', !!process.env.SUPABASE_URL);
-console.log('SUPABASE_SERVICE_ROLE presente?', !!process.env.SUPABASE_SERVICE_ROLE);
-
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
 
 if (!supabaseUrl || !supabaseServiceRole) {
-    console.error('❌ ERRO: Variáveis de ambiente ausentes!');
-    console.error('SUPABASE_URL:', supabaseUrl ? 'OK' : 'FALTANDO');
-    console.error('SUPABASE_SERVICE_ROLE:', supabaseServiceRole ? 'OK' : 'FALTANDO');
-    console.error('⚠️  Servidor iniciará em modo de erro para diagnóstico');
+    console.error('❌ ERRO: Variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE são obrigatórias');
+    process.exit(1);
 }
 
-let supabase;
-if (supabaseUrl && supabaseServiceRole) {
-    try {
-        supabase = createClient(supabaseUrl, supabaseServiceRole, {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false
-            }
-        });
-        console.log('✅ Cliente Supabase criado com sucesso');
-    } catch (error) {
-        console.error('❌ Erro ao criar cliente Supabase:', error.message);
+const supabase = createClient(supabaseUrl, supabaseServiceRole, {
+    auth: {
+        autoRefreshToken: false,
+        persistSession: false
     }
-}
+});
 
 // ============================================
 // CONFIGURAÇÃO
@@ -70,41 +51,55 @@ app.use((req, res, next) => {
     next();
 });
 
-// Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Middleware para verificar se o Supabase está configurado
-function requireSupabase(req, res, next) {
-    if (!supabase) {
-        return res.status(503).json({
+// Middleware de autenticação para rotas da API
+async function requireAuth(req, res, next) {
+    // Permitir acesso público a health check e arquivos estáticos
+    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/api') === false) {
+        return next();
+    }
+    
+    // Verificar se há sessionToken nos headers
+    const sessionToken = req.headers['x-session-token'] || req.query.sessionToken;
+    
+    if (!sessionToken) {
+        console.log('❌ Acesso negado: sem sessionToken');
+        return res.status(401).json({
             success: false,
-            error: 'Serviço indisponível',
-            message: 'Supabase não está configurado. Verifique as variáveis de ambiente.',
-            debug: {
-                supabaseUrl: !!process.env.SUPABASE_URL,
-                supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE
-            }
+            error: 'Não autenticado',
+            message: 'Token de sessão não fornecido'
         });
     }
+    
+    // Validar token com o portal (opcional - implementar se necessário)
+    // Por enquanto, apenas verificar se o token existe
+    console.log('✅ Token de sessão presente:', sessionToken.substring(0, 10) + '...');
+    
     next();
 }
+
+// Aplicar middleware nas rotas da API
+app.use('/api', requireAuth);
+
+// Servir arquivos estáticos (HTML, CSS, JS) - SEM autenticação
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
 // FUNÇÕES AUXILIARES
 // ============================================
 
+// Hash de senha
 async function hashPassword(password) {
     const salt = await bcrypt.genSalt(10);
     return bcrypt.hash(password, salt);
 }
 
+// Verificar senha
 async function verifyPassword(password, hash) {
     return bcrypt.compare(password, hash);
 }
 
+// Registrar tentativa de login
 async function logLoginAttempt(username, ipAddress, deviceToken, success, failureReason = null) {
-    if (!supabase) return;
-    
     try {
         const { error } = await supabase
             .from('login_attempts')
@@ -127,26 +122,21 @@ async function logLoginAttempt(username, ipAddress, deviceToken, success, failur
 // ============================================
 
 // GET /api/users - Listar todos os usuários
-app.get('/api/users', requireSupabase, async (req, res) => {
+app.get('/api/users', async (req, res) => {
     try {
-        console.log('📥 Buscando usuários no Supabase...');
-        
         const { data, error } = await supabase
             .from('users')
             .select('*')
             .order('created_at', { ascending: false });
 
         if (error) {
-            console.error('❌ Erro do Supabase:', error);
+            console.error('Erro ao buscar usuários:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar usuários',
-                message: error.message,
-                details: error
+                message: error.message
             });
         }
-
-        console.log(`✅ ${data?.length || 0} usuários encontrados`);
 
         // Remover senhas da resposta
         const usersWithoutPasswords = data.map(user => {
@@ -160,7 +150,7 @@ app.get('/api/users', requireSupabase, async (req, res) => {
             total: usersWithoutPasswords.length
         });
     } catch (error) {
-        console.error('❌ Erro ao buscar usuários:', error);
+        console.error('Erro ao buscar usuários:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -170,7 +160,7 @@ app.get('/api/users', requireSupabase, async (req, res) => {
 });
 
 // GET /api/users/:id - Buscar usuário específico
-app.get('/api/users/:id', requireSupabase, async (req, res) => {
+app.get('/api/users/:id', async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('users')
@@ -192,7 +182,7 @@ app.get('/api/users/:id', requireSupabase, async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('❌ Erro ao buscar usuário:', error);
+        console.error('Erro ao buscar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -202,7 +192,7 @@ app.get('/api/users/:id', requireSupabase, async (req, res) => {
 });
 
 // POST /api/users - Criar novo usuário
-app.post('/api/users', requireSupabase, async (req, res) => {
+app.post('/api/users', async (req, res) => {
     try {
         const { username, password, name, is_admin } = req.body;
 
@@ -246,7 +236,7 @@ app.post('/api/users', requireSupabase, async (req, res) => {
             .single();
 
         if (error) {
-            console.error('❌ Erro ao criar usuário:', error);
+            console.error('Erro ao criar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao criar usuário',
@@ -262,7 +252,7 @@ app.post('/api/users', requireSupabase, async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('❌ Erro ao criar usuário:', error);
+        console.error('Erro ao criar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -272,7 +262,7 @@ app.post('/api/users', requireSupabase, async (req, res) => {
 });
 
 // PUT /api/users/:id - Atualizar usuário
-app.put('/api/users/:id', requireSupabase, async (req, res) => {
+app.put('/api/users/:id', async (req, res) => {
     try {
         const { username, password, name, is_admin, is_active } = req.body;
         
@@ -296,7 +286,7 @@ app.put('/api/users/:id', requireSupabase, async (req, res) => {
             .single();
 
         if (error) {
-            console.error('❌ Erro ao atualizar usuário:', error);
+            console.error('Erro ao atualizar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao atualizar usuário',
@@ -312,7 +302,7 @@ app.put('/api/users/:id', requireSupabase, async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('❌ Erro ao atualizar usuário:', error);
+        console.error('Erro ao atualizar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -322,7 +312,7 @@ app.put('/api/users/:id', requireSupabase, async (req, res) => {
 });
 
 // DELETE /api/users/:id - Deletar usuário
-app.delete('/api/users/:id', requireSupabase, async (req, res) => {
+app.delete('/api/users/:id', async (req, res) => {
     try {
         const { error } = await supabase
             .from('users')
@@ -330,7 +320,7 @@ app.delete('/api/users/:id', requireSupabase, async (req, res) => {
             .eq('id', req.params.id);
 
         if (error) {
-            console.error('❌ Erro ao deletar usuário:', error);
+            console.error('Erro ao deletar usuário:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao deletar usuário',
@@ -343,7 +333,7 @@ app.delete('/api/users/:id', requireSupabase, async (req, res) => {
             message: 'Usuário removido com sucesso'
         });
     } catch (error) {
-        console.error('❌ Erro ao deletar usuário:', error);
+        console.error('Erro ao deletar usuário:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -353,7 +343,7 @@ app.delete('/api/users/:id', requireSupabase, async (req, res) => {
 });
 
 // PATCH /api/users/:id/toggle-status - Ativar/Desativar usuário
-app.patch('/api/users/:id/toggle-status', requireSupabase, async (req, res) => {
+app.patch('/api/users/:id/toggle-status', async (req, res) => {
     try {
         // Buscar usuário atual
         const { data: currentUser } = await supabase
@@ -378,7 +368,7 @@ app.patch('/api/users/:id/toggle-status', requireSupabase, async (req, res) => {
             .single();
 
         if (error) {
-            console.error('❌ Erro ao alterar status:', error);
+            console.error('Erro ao alterar status:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao alterar status',
@@ -394,55 +384,7 @@ app.patch('/api/users/:id/toggle-status', requireSupabase, async (req, res) => {
             data: userWithoutPassword
         });
     } catch (error) {
-        console.error('❌ Erro ao alterar status:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro interno do servidor',
-            message: error.message
-        });
-    }
-});
-
-// PATCH /api/users/:id/reset-password - Resetar senha e fazer hash
-app.patch('/api/users/:id/reset-password', requireSupabase, async (req, res) => {
-    try {
-        const { password } = req.body;
-
-        if (!password || password.trim() === '') {
-            return res.status(400).json({
-                success: false,
-                error: 'Senha não pode ser vazia'
-            });
-        }
-
-        // Hash da nova senha
-        const hashedPassword = await hashPassword(password);
-
-        const { data, error } = await supabase
-            .from('users')
-            .update({ password: hashedPassword })
-            .eq('id', req.params.id)
-            .select()
-            .single();
-
-        if (error) {
-            console.error('❌ Erro ao resetar senha:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Erro ao resetar senha',
-                message: error.message
-            });
-        }
-
-        const { password: _, ...userWithoutPassword } = data;
-
-        res.json({
-            success: true,
-            message: 'Senha resetada com sucesso',
-            data: userWithoutPassword
-        });
-    } catch (error) {
-        console.error('❌ Erro ao resetar senha:', error);
+        console.error('Erro ao alterar status:', error);
         res.status(500).json({
             success: false,
             error: 'Erro interno do servidor',
@@ -455,11 +397,8 @@ app.patch('/api/users/:id/reset-password', requireSupabase, async (req, res) => 
 // ROTAS DA API - LOGIN ATTEMPTS
 // ============================================
 
-// ============================================
-// ROTAS DA API - LOGIN ATTEMPTS
-// ============================================
-
-app.get('/api/login-attempts', requireSupabase, async (req, res) => {
+// GET /api/login-attempts - Listar tentativas de login
+app.get('/api/login-attempts', async (req, res) => {
     try {
         const { username, limit = 100 } = req.query;
 
@@ -476,7 +415,7 @@ app.get('/api/login-attempts', requireSupabase, async (req, res) => {
         const { data, error } = await query;
 
         if (error) {
-            console.error('❌ Erro ao buscar tentativas:', error);
+            console.error('Erro ao buscar tentativas de login:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar tentativas de login',
@@ -490,10 +429,10 @@ app.get('/api/login-attempts', requireSupabase, async (req, res) => {
             total: data.length
         });
     } catch (error) {
-        console.error('❌ Erro:', error);
+        console.error('Erro ao buscar tentativas de login:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro interno',
+            error: 'Erro interno do servidor',
             message: error.message
         });
     }
@@ -503,7 +442,8 @@ app.get('/api/login-attempts', requireSupabase, async (req, res) => {
 // ROTAS DA API - DISPOSITIVOS AUTORIZADOS
 // ============================================
 
-app.get('/api/authorized-devices', requireSupabase, async (req, res) => {
+// GET /api/authorized-devices - Listar dispositivos autorizados
+app.get('/api/authorized-devices', async (req, res) => {
     try {
         const { username } = req.query;
 
@@ -519,10 +459,139 @@ app.get('/api/authorized-devices', requireSupabase, async (req, res) => {
         const { data, error } = await query;
 
         if (error) {
-            console.error('❌ Erro ao buscar dispositivos:', error);
+            console.error('Erro ao buscar dispositivos:', error);
             return res.status(500).json({
                 success: false,
                 error: 'Erro ao buscar dispositivos',
+                message: error.message
+            });
+        }
+
+        res.json({
+            success: true,
+            data,
+            total: data.length
+        });
+    } catch (error) {
+        console.error('Erro ao buscar dispositivos:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno do servidor',
+            message: error.message
+        });
+    }
+});
+
+// DELETE /api/authorized-devices/:id - Remover dispositivo
+app.delete('/api/authorized-devices/:id', async (req, res) => {
+    try {
+        const { error } = await supabase
+            .from('authorized_devices')
+            .delete()
+            .eq('id', req.params.id);
+
+        if (error) {
+            console.error('Erro ao remover dispositivo:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Erro ao remover dispositivo',
+                message: error.message
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Dispositivo removido com sucesso'
+        });
+    } catch (error) {
+        console.error('Erro ao remover dispositivo:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno do servidor',
+            message: error.message
+        });
+    }
+});
+
+// ============================================
+// ROTAS DA API - ALERTAS DE SEGURANÇA
+// ============================================
+
+// POST /api/alerts - Criar novo alerta
+app.post('/api/alerts', requireSupabase, async (req, res) => {
+    try {
+        const { alert_type, severity, ip_address, username, attempted_system, message, details } = req.body;
+
+        if (!alert_type || !message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Campos obrigatórios: alert_type, message'
+            });
+        }
+
+        const { data, error } = await supabase
+            .from('security_alerts')
+            .insert({
+                alert_type,
+                severity: severity || 'medium',
+                ip_address,
+                username,
+                attempted_system,
+                message,
+                details: details || {},
+                is_read: false
+            })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('❌ Erro ao criar alerta:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Erro ao criar alerta',
+                message: error.message
+            });
+        }
+
+        console.log('🚨 ALERTA CRIADO:', alert_type, '-', message);
+
+        res.status(201).json({
+            success: true,
+            message: 'Alerta criado com sucesso',
+            data
+        });
+    } catch (error) {
+        console.error('❌ Erro ao criar alerta:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno',
+            message: error.message
+        });
+    }
+});
+
+// GET /api/alerts - Listar alertas
+app.get('/api/alerts', requireSupabase, async (req, res) => {
+    try {
+        const { unread, limit = 50 } = req.query;
+
+        let query = supabase
+            .from('security_alerts')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(parseInt(limit));
+
+        if (unread === 'true') {
+            query = query.eq('is_read', false);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('❌ Erro ao buscar alertas:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Erro ao buscar alertas',
                 message: error.message
             });
         }
@@ -542,25 +611,63 @@ app.get('/api/authorized-devices', requireSupabase, async (req, res) => {
     }
 });
 
-app.delete('/api/authorized-devices/:id', requireSupabase, async (req, res) => {
+// PATCH /api/alerts/:id/mark-read - Marcar alerta como lido
+app.patch('/api/alerts/:id/mark-read', requireSupabase, async (req, res) => {
     try {
-        const { error } = await supabase
-            .from('authorized_devices')
-            .delete()
-            .eq('id', req.params.id);
+        const { data, error } = await supabase
+            .from('security_alerts')
+            .update({ 
+                is_read: true,
+                read_at: new Date().toISOString()
+            })
+            .eq('id', req.params.id)
+            .select()
+            .single();
 
         if (error) {
-            console.error('❌ Erro ao remover dispositivo:', error);
+            console.error('❌ Erro ao marcar alerta:', error);
             return res.status(500).json({
                 success: false,
-                error: 'Erro ao remover dispositivo',
+                error: 'Erro ao marcar alerta',
                 message: error.message
             });
         }
 
         res.json({
             success: true,
-            message: 'Dispositivo removido com sucesso'
+            message: 'Alerta marcado como lido',
+            data
+        });
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno',
+            message: error.message
+        });
+    }
+});
+
+// DELETE /api/alerts/:id - Deletar alerta
+app.delete('/api/alerts/:id', requireSupabase, async (req, res) => {
+    try {
+        const { error } = await supabase
+            .from('security_alerts')
+            .delete()
+            .eq('id', req.params.id);
+
+        if (error) {
+            console.error('❌ Erro ao deletar alerta:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Erro ao deletar alerta',
+                message: error.message
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Alerta removido com sucesso'
         });
     } catch (error) {
         console.error('❌ Erro:', error);
@@ -576,7 +683,8 @@ app.delete('/api/authorized-devices/:id', requireSupabase, async (req, res) => {
 // ROTAS DA API - DASHBOARD
 // ============================================
 
-app.get('/api/dashboard', requireSupabase, async (req, res) => {
+// GET /api/dashboard - Estatísticas
+app.get('/api/dashboard', async (req, res) => {
     try {
         // Buscar usuários
         const { data: users } = await supabase
@@ -607,7 +715,7 @@ app.get('/api/dashboard', requireSupabase, async (req, res) => {
             data: stats
         });
     } catch (error) {
-        console.error('❌ Erro ao gerar dashboard:', error);
+        console.error('Erro ao gerar dashboard:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao gerar dashboard',
@@ -622,41 +730,22 @@ app.get('/api/dashboard', requireSupabase, async (req, res) => {
 
 app.get('/health', async (req, res) => {
     try {
-        const health = {
-            status: 'starting',
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString(),
-            environment: {
-                nodeEnv: process.env.NODE_ENV,
-                supabaseUrl: !!process.env.SUPABASE_URL,
-                supabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE,
-                portalUrl: !!process.env.PORTAL_URL
-            },
-            supabase: 'checking'
-        };
-
-        if (!supabase) {
-            health.status = 'unhealthy';
-            health.supabase = 'not configured';
-            return res.status(503).json(health);
-        }
-
         // Testar conexão com Supabase
         const { error } = await supabase
             .from('users')
             .select('count')
             .limit(1);
 
-        health.status = error ? 'unhealthy' : 'healthy';
-        health.supabase = error ? `error: ${error.message}` : 'connected';
-
-        res.status(error ? 503 : 200).json(health);
+        res.json({
+            status: error ? 'unhealthy' : 'healthy',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+            supabase: error ? 'disconnected' : 'connected'
+        });
     } catch (error) {
         res.status(500).json({
-            status: 'error',
-            error: error.message,
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString()
+            status: 'unhealthy',
+            error: error.message
         });
     }
 });
@@ -682,18 +771,22 @@ app.listen(PORT, () => {
     console.log('===============================================');
     console.log(`✅ Servidor rodando na porta: ${PORT}`);
     console.log(`🌐 URL: http://localhost:${PORT}`);
-    console.log(`🗄️  Supabase: ${supabaseUrl || 'NÃO CONFIGURADO'}`);
-    console.log(`🌐 Portal: ${PORTAL_URL}`);
+    console.log(`🗄️  Supabase: ${supabaseUrl}`);
     console.log('');
     console.log('📋 Endpoints disponíveis:');
-    console.log('   GET    /health                     - Status');
+    console.log('   GET    /                           - Frontend');
+    console.log('   GET    /health                     - Status do servidor');
     console.log('   GET    /api/users                  - Listar usuários');
+    console.log('   GET    /api/users/:id              - Buscar usuário');
     console.log('   POST   /api/users                  - Criar usuário');
     console.log('   PUT    /api/users/:id              - Atualizar usuário');
     console.log('   DELETE /api/users/:id              - Deletar usuário');
-console.log('   PATCH  /api/users/:id/toggle-status - Ativar/Desativar');
-console.log('   PATCH  /api/users/:id/reset-password - Resetar senha');
-console.log('===============================================');
+    console.log('   PATCH  /api/users/:id/toggle-status - Ativar/Desativar');
+    console.log('   GET    /api/login-attempts         - Tentativas de login');
+    console.log('   GET    /api/authorized-devices     - Dispositivos autorizados');
+    console.log('   DELETE /api/authorized-devices/:id - Remover dispositivo');
+    console.log('   GET    /api/dashboard              - Estatísticas');
+    console.log('===============================================');
     console.log('');
 });
 
