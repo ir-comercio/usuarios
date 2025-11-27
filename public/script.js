@@ -1,468 +1,617 @@
-// ============================================
-// GERENCIAMENTO DE USUÁRIOS - FRONTEND
-// ============================================
+// CONFIGURAÇÃO
+const PORTAL_URL = 'https://ir-comercio-portal-zcan.onrender.com';
+const API_URL = 'https://usuarios-effz.onrender.com';
 
-// Configuração da API
-const API_BASE_URL = window.location.origin;
+let users = [];
+let isOnline = false;
+let lastDataHash = '';
+let sessionToken = null;
 
-// Estado da aplicação
-let allUsers = [];
-let currentFilter = {
-    search: '',
-    status: 'all',
-    type: 'all'
-};
-
-// ============================================
-// INICIALIZAÇÃO
-// ============================================
+// LOG APENAS NO INÍCIO
+console.log('🚀 Gerenciamento de Usuários iniciado');
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Gerenciamento de Usuários Iniciado');
-    console.log('📡 Servidor ONLINE');
-    
-    // Verificar sessão
-    checkSession();
-    
-    // Carregar usuários
-    loadUsers();
-    
-    // Event listeners
-    setupEventListeners();
+    verificarAutenticacao();
 });
 
-// ============================================
-// VERIFICAÇÃO DE SESSÃO
-// ============================================
+function verificarAutenticacao() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('sessionToken');
 
-async function checkSession() {
-    const sessionToken = localStorage.getItem('sessionToken');
-    
+    if (tokenFromUrl) {
+        sessionToken = tokenFromUrl;
+        sessionStorage.setItem('usuariosSession', tokenFromUrl);
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+        sessionToken = sessionStorage.getItem('usuariosSession');
+    }
+
     if (!sessionToken) {
-        console.warn('⚠️ Nenhuma sessão encontrada');
+        mostrarTelaAcessoNegado();
         return;
     }
-    
-    console.log('✅ Token de sessão encontrado');
+
+    inicializarApp();
 }
 
-// ============================================
-// EVENT LISTENERS
-// ============================================
+function mostrarTelaAcessoNegado(mensagem = 'NÃO AUTORIZADO') {
+    document.body.innerHTML = `
+        <div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            text-align: center;
+            padding: 2rem;
+        ">
+            
+            <h1 style="font-size: 2.2rem; margin-bottom: 1rem;">
+                ${mensagem}
+            </h1>
 
-function setupEventListeners() {
-    // Botão novo usuário
-    const newUserBtn = document.getElementById('newUserBtn');
-    if (newUserBtn) {
-        newUserBtn.addEventListener('click', showNewUserModal);
-    }
-    
-    // Filtros
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            currentFilter.search = e.target.value;
-            filterUsers();
+            <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                Somente usuários autenticados podem acessar esta área.
+            </p>
+
+            <a href="${PORTAL_URL}" style="
+                display: inline-block;
+                background: var(--btn-register);
+                color: white;
+                padding: 14px 32px;
+                border-radius: 8px;
+                text-decoration: none;
+                font-weight: 600;
+            ">Ir para o Portal</a>
+        </div>
+    `;
+}
+
+function inicializarApp() {
+    checkServerStatus();
+    setInterval(checkServerStatus, 15000);
+    startPolling();
+}
+
+window.toggleForm = function() {
+    showFormModal(null);
+};
+
+async function checkServerStatus() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(`${API_URL}/users`, {
+            method: 'HEAD',
+            headers: { 'X-Session-Token': sessionToken },
+            signal: controller.signal
         });
-    }
-    
-    const statusFilter = document.getElementById('statusFilter');
-    if (statusFilter) {
-        statusFilter.addEventListener('change', (e) => {
-            currentFilter.status = e.target.value;
-            filterUsers();
-        });
-    }
-    
-    const typeFilter = document.getElementById('typeFilter');
-    if (typeFilter) {
-        typeFilter.addEventListener('change', (e) => {
-            currentFilter.type = e.target.value;
-            filterUsers();
-        });
-    }
-    
-    // Modal
-    const modal = document.getElementById('userModal');
-    const closeBtn = document.querySelector('.close-modal');
-    const cancelBtn = document.getElementById('cancelBtn');
-    
-    if (closeBtn) {
-        closeBtn.addEventListener('click', closeModal);
-    }
-    
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', closeModal);
-    }
-    
-    if (modal) {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal();
-            }
-        });
-    }
-    
-    // Formulário
-    const userForm = document.getElementById('userForm');
-    if (userForm) {
-        userForm.addEventListener('submit', handleFormSubmit);
+        
+        clearTimeout(timeoutId);
+
+        if (response.status === 401) {
+            sessionStorage.removeItem('usuariosSession');
+            mostrarTelaAcessoNegado('Sua sessão expirou');
+            return false;
+        }
+
+        const wasOffline = !isOnline;
+        isOnline = response.ok;
+        
+        if (wasOffline && isOnline) {
+            console.log('✅ Servidor ONLINE');
+            await loadUsers();
+        } else if (!wasOffline && !isOnline) {
+            console.log('❌ Servidor OFFLINE');
+        }
+        
+        updateConnectionStatus();
+        return isOnline;
+    } catch (error) {
+        if (isOnline) {
+            console.log('❌ Erro de conexão:', error.message);
+        }
+        isOnline = false;
+        updateConnectionStatus();
+        return false;
     }
 }
 
-// ============================================
-// CARREGAR USUÁRIOS
-// ============================================
+function updateConnectionStatus() {
+    const statusElement = document.getElementById('connectionStatus');
+    if (statusElement) {
+        statusElement.className = isOnline ? 'connection-status online' : 'connection-status offline';
+    }
+}
 
 async function loadUsers() {
+    if (!isOnline) return;
+
     try {
-        console.log('📥 Carregando usuários...');
-        
-        const sessionToken = localStorage.getItem('sessionToken');
-        
-        const response = await fetch(`${API_BASE_URL}/api/users`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': sessionToken || ''
-            }
+        const response = await fetch(`${API_URL}/users`, {
+            headers: { 'X-Session-Token': sessionToken }
         });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+
+        if (response.status === 401) {
+            sessionStorage.removeItem('usuariosSession');
+            mostrarTelaAcessoNegado('Sua sessão expirou');
+            return;
         }
+
+        if (!response.ok) return;
+
+        const data = await response.json();
         
-        const result = await response.json();
-        
-        if (result.success) {
-            allUsers = result.data;
-            console.log(`✅ ${allUsers.length} usuários carregados`);
-            updateStatistics();
-            renderUsers(allUsers);
-        } else {
-            throw new Error(result.error || 'Erro ao carregar usuários');
+        if (data.success) {
+            const newHash = JSON.stringify(data.data.map(u => u.id));
+
+            if (newHash !== lastDataHash) {
+                users = data.data;
+                lastDataHash = newHash;
+                console.log(`📊 ${users.length} usuários carregados`);
+                renderUsers();
+                updateDashboard();
+            }
         }
-        
     } catch (error) {
-        console.error('❌ Erro ao carregar usuários:', error);
-        showNotification('Erro ao carregar usuários: ' + error.message, 'error');
+        // Silencioso
     }
 }
 
-// ============================================
-// RENDERIZAR USUÁRIOS
-// ============================================
-
-function renderUsers(users) {
-    const container = document.getElementById('usersContainer');
-    
-    if (!container) {
-        console.error('❌ Container de usuários não encontrado');
-        return;
-    }
-    
-    if (users.length === 0) {
-        container.innerHTML = `
-            <div style="text-align: center; padding: 3rem; color: #666;">
-                <p style="font-size: 1.2rem; margin-bottom: 0.5rem;">📋 Nenhum usuário encontrado</p>
-                <p style="font-size: 0.9rem;">Clique em "Novo Usuário" para adicionar</p>
-            </div>
-        `;
-        return;
-    }
-    
-    container.innerHTML = users.map(user => `
-        <div class="user-card">
-            <div class="user-header">
-                <div class="user-avatar">
-                    ${user.name.charAt(0).toUpperCase()}
-                </div>
-                <div class="user-info">
-                    <h3>${user.name}</h3>
-                    <p>@${user.username}</p>
-                </div>
-                <div class="user-badges">
-                    ${user.is_admin ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-user">Usuário</span>'}
-                    ${user.is_active ? '<span class="badge badge-active">Ativo</span>' : '<span class="badge badge-inactive">Inativo</span>'}
-                </div>
-            </div>
-            
-            <div class="user-meta">
-                <div class="meta-item">
-                    <span class="meta-label">ID:</span>
-                    <span class="meta-value">${user.id}</span>
-                </div>
-                <div class="meta-item">
-                    <span class="meta-label">Criado em:</span>
-                    <span class="meta-value">${formatDate(user.created_at)}</span>
-                </div>
-            </div>
-            
-            <div class="user-actions">
-                <button onclick="editUser('${user.id}')" class="btn-action btn-edit">
-                    ✏️ Editar
-                </button>
-                <button onclick="toggleUserStatus('${user.id}', ${user.is_active})" class="btn-action ${user.is_active ? 'btn-deactivate' : 'btn-activate'}">
-                    ${user.is_active ? '🚫 Desativar' : '✅ Ativar'}
-                </button>
-                <button onclick="deleteUser('${user.id}', '${user.username}')" class="btn-action btn-delete">
-                    🗑️ Remover
-                </button>
-            </div>
-        </div>
-    `).join('');
+function startPolling() {
+    loadUsers();
+    setInterval(() => {
+        if (isOnline) loadUsers();
+    }, 10000);
 }
 
-// ============================================
-// ATUALIZAR ESTATÍSTICAS
-// ============================================
-
-function updateStatistics() {
-    document.getElementById('totalUsers').textContent = allUsers.length;
-    document.getElementById('activeUsers').textContent = allUsers.filter(u => u.is_active).length;
-    document.getElementById('inactiveUsers').textContent = allUsers.filter(u => !u.is_active).length;
-    document.getElementById('adminUsers').textContent = allUsers.filter(u => u.is_admin).length;
+function updateDashboard() {
+    const total = users.length;
+    const ativos = users.filter(u => u.is_active).length;
+    const inativos = total - ativos;
+    const admins = users.filter(u => u.is_admin).length;
+    
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statAtivos').textContent = ativos;
+    document.getElementById('statInativos').textContent = inativos;
+    document.getElementById('statAdmins').textContent = admins;
 }
-
-// ============================================
-// FILTRAR USUÁRIOS
-// ============================================
 
 function filterUsers() {
-    let filtered = [...allUsers];
+    const searchTerm = document.getElementById('search').value.toLowerCase();
+    const filterStatus = document.getElementById('filterStatus').value;
+    const filterAdmin = document.getElementById('filterAdmin').value;
     
-    // Filtro de busca
-    if (currentFilter.search) {
-        const search = currentFilter.search.toLowerCase();
-        filtered = filtered.filter(user => 
-            user.name.toLowerCase().includes(search) ||
-            user.username.toLowerCase().includes(search)
+    let filtered = users;
+
+    if (filterStatus !== 'all') {
+        filtered = filtered.filter(u => {
+            if (filterStatus === 'active') return u.is_active;
+            if (filterStatus === 'inactive') return !u.is_active;
+            return true;
+        });
+    }
+
+    if (filterAdmin !== 'all') {
+        filtered = filtered.filter(u => {
+            if (filterAdmin === 'admin') return u.is_admin;
+            if (filterAdmin === 'user') return !u.is_admin;
+            return true;
+        });
+    }
+
+    if (searchTerm) {
+        filtered = filtered.filter(u => 
+            u.name.toLowerCase().includes(searchTerm) ||
+            u.username.toLowerCase().includes(searchTerm)
         );
     }
-    
-    // Filtro de status
-    if (currentFilter.status !== 'all') {
-        const isActive = currentFilter.status === 'active';
-        filtered = filtered.filter(user => user.is_active === isActive);
-    }
-    
-    // Filtro de tipo
-    if (currentFilter.type !== 'all') {
-        const isAdmin = currentFilter.type === 'admin';
-        filtered = filtered.filter(user => user.is_admin === isAdmin);
-    }
-    
+
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
     renderUsers(filtered);
 }
 
-// ============================================
-// MODAL
-// ============================================
-
-function showNewUserModal() {
-    document.getElementById('modalTitle').textContent = 'Novo Usuário';
-    document.getElementById('userId').value = '';
-    document.getElementById('userForm').reset();
-    document.getElementById('userModal').style.display = 'flex';
+function getTimeAgo(timestamp) {
+    if (!timestamp) return 'Sem data';
+    const now = new Date();
+    const past = new Date(timestamp);
+    const diffInSeconds = Math.floor((now - past) / 1000);
+    if (diffInSeconds < 60) return `${diffInSeconds}s`;
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}min`;
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d`;
+    return past.toLocaleDateString('pt-BR');
 }
 
-async function editUser(userId) {
-    try {
-        const sessionToken = localStorage.getItem('sessionToken');
-        
-        const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-            headers: {
-                'X-Session-Token': sessionToken || ''
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error('Erro ao carregar usuário');
-        }
-        
-        const result = await response.json();
-        const user = result.data;
-        
-        document.getElementById('modalTitle').textContent = 'Editar Usuário';
-        document.getElementById('userId').value = user.id;
-        document.getElementById('username').value = user.username;
-        document.getElementById('name').value = user.name;
-        document.getElementById('password').value = '';
-        document.getElementById('isAdmin').checked = user.is_admin;
-        document.getElementById('isActive').checked = user.is_active;
-        
-        document.getElementById('userModal').style.display = 'flex';
-        
-    } catch (error) {
-        console.error('❌ Erro ao carregar usuário:', error);
-        showNotification('Erro ao carregar usuário', 'error');
-    }
-}
-
-function closeModal() {
-    document.getElementById('userModal').style.display = 'none';
-    document.getElementById('userForm').reset();
-}
-
-// ============================================
-// SALVAR USUÁRIO
-// ============================================
-
-async function handleFormSubmit(e) {
-    e.preventDefault();
+function renderUsers(usersToRender = users) {
+    const container = document.getElementById('usersContainer');
     
-    const userId = document.getElementById('userId').value;
-    const formData = {
-        username: document.getElementById('username').value,
-        password: document.getElementById('password').value,
-        name: document.getElementById('name').value,
-        is_admin: document.getElementById('isAdmin').checked,
-        is_active: document.getElementById('isActive').checked
+    if (!usersToRender || usersToRender.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-secondary);">Nenhum usuário encontrado</div>';
+        return;
+    }
+
+    const table = `
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Usuário</th>
+                        <th>Status</th>
+                        <th>Tipo</th>
+                        <th>Criado</th>
+                        <th style="text-align: center;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${usersToRender.map(u => `
+                        <tr>
+                            <td><strong>${u.name}</strong></td>
+                            <td>${u.username}</td>
+                            <td><span class="badge ${u.is_active ? 'ativo' : 'inativo'}">${u.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                            <td><span class="badge ${u.is_admin ? 'admin' : ''}">${u.is_admin ? 'Admin' : 'Usuário'}</span></td>
+                            <td style="color: var(--text-secondary); font-size: 0.85rem;">${getTimeAgo(u.created_at)}</td>
+                            <td class="actions-cell" style="text-align: center;">
+                                <button onclick="window.viewUser('${u.id}')" class="action-btn view">Ver</button>
+                                <button onclick="window.editUser('${u.id}')" class="action-btn edit">Editar</button>
+                                <button onclick="window.toggleStatus('${u.id}')" class="action-btn">${u.is_active ? 'Desativar' : 'Ativar'}</button>
+                                <button onclick="window.deleteUser('${u.id}')" class="action-btn delete">Excluir</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    container.innerHTML = table;
+}
+
+function showFormModal(editingId = null) {
+    const isEditing = editingId !== null;
+    const user = isEditing ? users.find(u => u.id === editingId) : null;
+
+    const modalHTML = `
+        <div class="modal-overlay" id="formModal">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h3 class="modal-title">${isEditing ? 'Editar Usuário' : 'Novo Usuário'}</h3>
+                </div>
+                <div class="modal-form-content">
+                    <form id="modalUserForm">
+                        <input type="hidden" id="modalEditId" value="${editingId || ''}">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="modalName">Nome Completo *</label>
+                                <input type="text" id="modalName" value="${user?.name || ''}" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="modalUsername">Nome de Usuário *</label>
+                                <input type="text" id="modalUsername" value="${user?.username || ''}" required pattern="[a-z0-9_]+">
+                            </div>
+                            <div class="form-group">
+                                <label for="modalPassword">Senha ${isEditing ? '' : '*'}</label>
+                                <input type="password" id="modalPassword" minlength="6" ${isEditing ? '' : 'required'}>
+                                <small>${isEditing ? 'Deixe em branco para manter a senha atual' : 'Mínimo 6 caracteres'}</small>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="modalIsAdmin" ${user?.is_admin ? 'checked' : ''}>
+                                    Administrador
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="modalIsActive" ${user?.is_active !== false ? 'checked' : ''}>
+                                    Ativo
+                                </label>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="secondary" id="modalCancelFormBtn">Cancelar</button>
+                            <button type="submit" class="save">${isEditing ? 'Atualizar' : 'Salvar'}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const modal = document.getElementById('formModal');
+    const form = document.getElementById('modalUserForm');
+    const cancelBtn = document.getElementById('modalCancelFormBtn');
+
+    const closeModal = () => {
+        modal.style.animation = 'fadeOut 0.2s ease forwards';
+        setTimeout(() => modal.remove(), 200);
     };
-    
-    try {
-        const sessionToken = localStorage.getItem('sessionToken');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = {
+            name: document.getElementById('modalName').value.trim(),
+            username: document.getElementById('modalUsername').value.trim().toLowerCase(),
+            password: document.getElementById('modalPassword').value,
+            is_admin: document.getElementById('modalIsAdmin').checked,
+            is_active: document.getElementById('modalIsActive').checked
+        };
+
+        const editId = document.getElementById('modalEditId').value;
         
-        let url, method;
-        if (userId) {
-            url = `${API_BASE_URL}/api/users/${userId}`;
-            method = 'PUT';
-            // Se senha estiver vazia, não enviar
-            if (!formData.password) {
-                delete formData.password;
-            }
+        // Verificar username duplicado
+        const usernameDuplicado = users.find(u => u.username.toLowerCase() === formData.username.toLowerCase() && u.id !== editId);
+        if (usernameDuplicado) {
+            showMessage(`Usuário "${formData.username}" já existe`, 'error');
+            return;
+        }
+
+        const tempId = editId || 'temp_' + Date.now();
+        const optimisticData = { ...formData, id: tempId, created_at: new Date().toISOString() };
+
+        if (editId) {
+            const index = users.findIndex(u => u.id === editId);
+            if (index !== -1) users[index] = optimisticData;
+            showMessage('Atualizado!', 'success');
         } else {
-            url = `${API_BASE_URL}/api/users`;
-            method = 'POST';
+            users.push(optimisticData);
+            showMessage('Criado!', 'success');
+        }
+
+        renderUsers();
+        updateDashboard();
+        closeModal();
+        syncWithServer(formData, editId, tempId);
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        showMessage(isEditing ? 'Atualização cancelada' : 'Registro cancelado', 'error');
+        closeModal();
+    });
+    
+    setTimeout(() => document.getElementById('modalName').focus(), 100);
+}
+
+async function syncWithServer(formData, editId = null, tempId = null) {
+    if (!isOnline) return;
+
+    try {
+        const url = editId ? `${API_URL}/users/${editId}` : `${API_URL}/users`;
+        const method = editId ? 'PUT' : 'POST';
+
+        const response = await fetch(url, { 
+            method, 
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            }, 
+            body: JSON.stringify(formData) 
+        });
+
+        if (response.status === 401) {
+            sessionStorage.removeItem('usuariosSession');
+            mostrarTelaAcessoNegado('Sua sessão expirou');
+            return;
         }
         
-        const response = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': sessionToken || ''
-            },
-            body: JSON.stringify(formData)
-        });
+        if (!response.ok) throw new Error(`Erro ${response.status}`);
         
         const result = await response.json();
-        
-        if (result.success) {
-            showNotification(result.message || 'Operação realizada com sucesso!', 'success');
-            closeModal();
-            loadUsers();
+        const savedData = result.data || result;
+
+        if (editId) {
+            const index = users.findIndex(u => u.id === editId);
+            if (index !== -1) users[index] = savedData;
         } else {
-            throw new Error(result.error || 'Erro ao salvar usuário');
+            const tempIndex = users.findIndex(u => u.id === tempId);
+            if (tempIndex !== -1) users[tempIndex] = savedData;
         }
-        
+
+        lastDataHash = JSON.stringify(users.map(u => u.id));
+        renderUsers();
+        updateDashboard();
     } catch (error) {
-        console.error('❌ Erro ao salvar usuário:', error);
-        showNotification('Erro: ' + error.message, 'error');
+        if (!editId) {
+            users = users.filter(u => u.id !== tempId);
+            renderUsers();
+            updateDashboard();
+        }
+        showMessage('Erro ao salvar', 'error');
     }
 }
 
-// ============================================
-// ALTERNAR STATUS
-// ============================================
+window.viewUser = function(id) {
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    
+    const modalHTML = `
+        <div class="modal-overlay" id="viewModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Detalhes do Usuário</h3>
+                </div>
+                <div style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div>
+                        <strong style="color: var(--text-secondary);">Nome:</strong><br>
+                        ${user.name}
+                    </div>
+                    <div>
+                        <strong style="color: var(--text-secondary);">Usuário:</strong><br>
+                        ${user.username}
+                    </div>
+                    <div>
+                        <strong style="color: var(--text-secondary);">Status:</strong><br>
+                        <span class="badge ${user.is_active ? 'ativo' : 'inativo'}">${user.is_active ? 'Ativo' : 'Inativo'}</span>
+                    </div>
+                    <div>
+                        <strong style="color: var(--text-secondary);">Tipo:</strong><br>
+                        <span class="badge ${user.is_admin ? 'admin' : ''}">${user.is_admin ? 'Administrador' : 'Usuário'}</span>
+                    </div>
+                    <div>
+                        <strong style="color: var(--text-secondary);">Criado:</strong><br>
+                        ${new Date(user.created_at).toLocaleString('pt-BR')}
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button onclick="document.getElementById('viewModal').remove()">Fechar</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+};
 
-async function toggleUserStatus(userId, currentStatus) {
-    const action = currentStatus ? 'desativar' : 'ativar';
+window.editUser = function(id) {
+    showFormModal(id);
+};
+
+window.toggleStatus = async function(id) {
+    const user = users.find(u => u.id === id);
+    if (!user) return;
     
-    if (!confirm(`Tem certeza que deseja ${action} este usuário?`)) {
-        return;
-    }
-    
-    try {
-        const sessionToken = localStorage.getItem('sessionToken');
-        
-        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/toggle-status`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': sessionToken || ''
+    const action = user.is_active ? 'desativar' : 'ativar';
+    const confirmed = await showConfirm(`Tem certeza que deseja ${action} este usuário?`, {
+        title: 'Alterar Status',
+        confirmText: 'Confirmar',
+        type: 'warning'
+    });
+
+    if (!confirmed) return;
+
+    const index = users.findIndex(u => u.id === id);
+    if (index !== -1) {
+        users[index].is_active = !users[index].is_active;
+        renderUsers();
+        updateDashboard();
+        showMessage(user.is_active ? 'Usuário ativado!' : 'Usuário desativado!', 'success');
+
+        if (isOnline) {
+            try {
+                const response = await fetch(`${API_URL}/users/${id}/toggle-status`, { 
+                    method: 'PATCH',
+                    headers: { 'X-Session-Token': sessionToken }
+                });
+
+                if (!response.ok) throw new Error('Erro ao alterar status');
+                
+                const result = await response.json();
+                if (result.data) {
+                    users[index] = result.data;
+                    renderUsers();
+                    updateDashboard();
+                }
+            } catch (error) {
+                users[index].is_active = !users[index].is_active;
+                renderUsers();
+                updateDashboard();
+                showMessage('Erro ao alterar status', 'error');
             }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showNotification(result.message, 'success');
-            loadUsers();
-        } else {
-            throw new Error(result.error || 'Erro ao alterar status');
         }
-        
-    } catch (error) {
-        console.error('❌ Erro ao alterar status:', error);
-        showNotification('Erro: ' + error.message, 'error');
     }
-}
+};
 
-// ============================================
-// DELETAR USUÁRIO
-// ============================================
+window.deleteUser = async function(id) {
+    const confirmed = await showConfirm('Tem certeza que deseja excluir este usuário?', {
+        title: 'Excluir Usuário',
+        confirmText: 'Excluir',
+        type: 'warning'
+    });
 
-async function deleteUser(userId, username) {
-    if (!confirm(`Tem certeza que deseja REMOVER o usuário "${username}"?\n\nEsta ação não pode ser desfeita!`)) {
-        return;
-    }
-    
-    try {
-        const sessionToken = localStorage.getItem('sessionToken');
-        
-        const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-Token': sessionToken || ''
+    if (!confirmed) return;
+
+    const deletedUser = users.find(u => u.id === id);
+    users = users.filter(u => u.id !== id);
+    renderUsers();
+    updateDashboard();
+    showMessage('Excluído!', 'error');
+
+    if (isOnline) {
+        try {
+            const response = await fetch(`${API_URL}/users/${id}`, { 
+                method: 'DELETE',
+                headers: { 'X-Session-Token': sessionToken }
+            });
+
+            if (response.status === 401) {
+                sessionStorage.removeItem('usuariosSession');
+                mostrarTelaAcessoNegado('Sua sessão expirou');
+                return;
             }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showNotification(result.message, 'success');
-            loadUsers();
-        } else {
-            throw new Error(result.error || 'Erro ao remover usuário');
+
+            if (!response.ok) throw new Error('Erro ao deletar');
+        } catch (error) {
+            if (deletedUser) {
+                users.push(deletedUser);
+                renderUsers();
+                updateDashboard();
+                showMessage('Erro ao excluir', 'error');
+            }
         }
-        
-    } catch (error) {
-        console.error('❌ Erro ao remover usuário:', error);
-        showNotification('Erro: ' + error.message, 'error');
     }
+};
+
+function showConfirm(message, options = {}) {
+    return new Promise((resolve) => {
+        const { title = 'Confirmação', confirmText = 'Confirmar', cancelText = 'Cancelar', type = 'warning' } = options;
+
+        const modalHTML = `
+            <div class="modal-overlay" id="confirmModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 class="modal-title">${title}</h3>
+                    </div>
+                    <p class="modal-message">${message}</p>
+                    <div class="modal-actions">
+                        <button class="secondary" id="modalCancelBtn">${cancelText}</button>
+                        <button class="${type === 'warning' ? 'danger' : 'success'}" id="modalConfirmBtn">${confirmText}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const modal = document.getElementById('confirmModal');
+        const confirmBtn = document.getElementById('modalConfirmBtn');
+        const cancelBtn = document.getElementById('modalCancelBtn');
+
+        const closeModal = (result) => {
+            modal.style.animation = 'fadeOut 0.2s ease forwards';
+            setTimeout(() => { modal.remove(); resolve(result); }, 200);
+        };
+
+        confirmBtn.addEventListener('click', () => closeModal(true));
+        cancelBtn.addEventListener('click', () => closeModal(false));
+
+        if (!document.querySelector('#modalAnimations')) {
+            const style = document.createElement('style');
+            style.id = 'modalAnimations';
+            style.textContent = `@keyframes fadeOut { to { opacity: 0; } }`;
+            document.head.appendChild(style);
+        }
+    });
 }
 
-// ============================================
-// UTILITÁRIOS
-// ============================================
-
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR');
-}
-
-function showNotification(message, type = 'info') {
-    // Criar elemento de notificação
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
+function showMessage(message, type) {
+    const oldMessages = document.querySelectorAll('.floating-message');
+    oldMessages.forEach(msg => msg.remove());
     
-    // Adicionar ao body
-    document.body.appendChild(notification);
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `floating-message ${type}`;
+    messageDiv.textContent = message;
     
-    // Remover após 3 segundos
+    document.body.appendChild(messageDiv);
+    
     setTimeout(() => {
-        notification.style.opacity = '0';
-        setTimeout(() => notification.remove(), 300);
+        messageDiv.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(() => messageDiv.remove(), 300);
     }, 3000);
 }
-
-// ============================================
-// EXPOR FUNÇÕES GLOBALMENTE
-// ============================================
-
-window.editUser = editUser;
-window.toggleUserStatus = toggleUserStatus;
-window.deleteUser = deleteUser;
